@@ -1,0 +1,105 @@
+# .github/workflows/worldcup.yml
+#
+# Runs automatically at kickoff time for every World Cup 2026 group stage game.
+# Also supports manual trigger (workflow_dispatch) with custom game_id + label.
+#
+# Required GitHub Secrets:
+#   SPORT5_EMAIL            - your Sport5 login email
+#   SPORT5_PASSWORD         - your Sport5 password
+#   GOOGLE_SHEETS_KEY_JSON  - Google Service Account JSON key (full contents)
+#   GOOGLE_SHEET_ID         - your Google Sheet ID from its URL
+#   FOOTBALL_DATA_API_KEY   - (optional) football-data.org free API key
+
+name: ⚽ World Cup Bets Scraper
+
+on:
+  # ── Manual trigger ──────────────────────────────────────────────────────────
+  workflow_dispatch:
+    inputs:
+      game_id:
+        description: "Sport5 game ID (gid from the site)"
+        required: true
+      game_label:
+        description: "Human label, e.g. 'Argentina vs Norway (17/06 01:00)'"
+        required: true
+
+  # ── Automatic schedule ──────────────────────────────────────────────────────
+  # Each cron fires 1 minute after kickoff (UTC times).
+  # World Cup 2026 typical kickoff slots: 00:00 / 03:00 / 06:00 / 21:00 / 00:00 UTC
+  #
+  # ADD ONE LINE PER GAME below in the format:
+  #   - cron: 'MM HH DD MM *'   # Team A vs Team B
+  #
+  # Example lines (fill in real dates/times):
+  schedule:
+    # ── Group Stage ────────────────────────────────────────────────────────────
+    - cron: '1 22 11 6 *'    # Opening game
+    - cron: '1 1  12 6 *'
+    - cron: '1 4  12 6 *'
+    - cron: '1 7  12 6 *'
+    # ... (add all 48 group stage games + knockout rounds)
+    #
+    # TIP: generate the full list from:
+    #   python3 scripts/generate_crons.py
+    # which reads the schedule from football-data.org and prints all cron lines.
+
+env:
+  SPORT5_EMAIL:           ${{ secrets.SPORT5_EMAIL }}
+  SPORT5_PASSWORD:        ${{ secrets.SPORT5_PASSWORD }}
+  GOOGLE_SHEETS_KEY_JSON: ${{ secrets.GOOGLE_SHEETS_KEY_JSON }}
+  GOOGLE_SHEET_ID:        ${{ secrets.GOOGLE_SHEET_ID }}
+  FOOTBALL_DATA_API_KEY:  ${{ secrets.FOOTBALL_DATA_API_KEY }}
+  WORKER_URL:             ${{ secrets.WORKER_URL }}
+  PUSH_SECRET:            ${{ secrets.PUSH_SECRET }}
+
+jobs:
+  scrape:
+    name: Scrape & analyze bets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ── 1. Checkout repo ────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Python setup ─────────────────────────────────────────────────────
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── 3. Determine game_id ────────────────────────────────────────────────
+      #   For scheduled runs, look up today's game from Sport5's schedule.
+      #   For manual runs, use the workflow_dispatch input.
+      - name: Resolve game ID
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "game_id=${{ github.event.inputs.game_id }}"     >> $GITHUB_OUTPUT
+            echo "game_label=${{ github.event.inputs.game_label }}" >> $GITHUB_OUTPUT
+          else
+            # Automatically detect today's game from Sport5 / football-data.org
+            python3 scripts/resolve_game_id.py
+          fi
+
+      # ── 4. Scrape, analyze, write ───────────────────────────────────────────
+      - name: Run scraper
+        run: |
+          python3 main.py \
+            --game-id    "${{ steps.resolve.outputs.game_id }}" \
+            --game-label "${{ steps.resolve.outputs.game_label }}"
+
+      # ── 5. Upload logs as artifact (useful for debugging) ───────────────────
+      - name: Upload run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-log-${{ github.run_id }}
+          path: "*.log"
+          if-no-files-found: ignore
+          retention-days: 14

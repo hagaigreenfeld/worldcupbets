@@ -1,0 +1,18 @@
+name            = "sport5-whatsapp-bot"
+main            = "worker.js"
+compatibility_date = "2024-01-01"
+
+# ── Secrets (set via CLI, NOT stored here) ─────────────────────────────────────
+# Run these commands once to set your secrets:
+#
+#   npx wrangler secret put TWILIO_ACCOUNT_SID
+#   npx wrangler secret put TWILIO_AUTH_TOKEN
+#   npx wrangler secret put TWILIO_FROM
+#   npx wrangler secret put WHATSAPP_GROUP_ID
+#   npx wrangler secret put SPORT5_EMAIL
+#   npx wrangler secret put SPORT5_PASSWORD
+#   npx wrangler secret put PUSH_SECRET
+#
+# TWILIO_FROM      → "whatsapp:+14155238886"  (Twilio sandbox number)
+# WHATSAPP_GROUP_ID → "whatsapp:+972XXXXXXXXX"  (your personal number to start;
+#                     for a group, use the group's participant list approach — see README)
