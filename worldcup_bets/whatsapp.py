@@ -63,9 +63,15 @@ def format_game_summary(analysis: dict, game_label: str) -> str:
     is_final = summary.get("is_final", True)
     result_label = "תוצאה סופית" if is_final else "תוצאת ביניים"
 
+    # Reverse score for RTL display: "2:0" stored as team1:team2,
+    # but in RTL the rightmost number reads first, so flip to show correctly.
+    def rtl_score(score: str) -> str:
+        parts = score.split(":")
+        return ":".join(reversed(parts)) if len(parts) == 2 else score
+
     lines = [
         f"⚽ *{game}*",
-        f"📊 {result_label}: *{result}*",
+        f"📊 {result_label}: *{rtl_score(result)}*",
         "",
     ]
 
@@ -76,7 +82,7 @@ def format_game_summary(analysis: dict, game_label: str) -> str:
         for score, players in exact_by_score.items():
             names = ", ".join(nickname(p["name"]) for p in players)
             pts   = players[0]["pts"]
-            lines.append(f"  *{score}* — {names} (+{pts} נק')")
+            lines.append(f"  *{rtl_score(score)}* — {names} ({pts} נק')")
     else:
         lines.append("🎯 אף אחד לא ניחש מדויק")
 
@@ -91,7 +97,7 @@ def format_game_summary(analysis: dict, game_label: str) -> str:
             label = winner_label.get(outcome, outcome)
             names = ", ".join(nickname(p["name"]) for p in players)
             pts   = players[0]["pts"]
-            lines.append(f"  {label} — {names} (+{pts} נק')")
+            lines.append(f"  {label} — {names} ({pts} נק')")
 
     lines.append("")
 
@@ -100,14 +106,6 @@ def format_game_summary(analysis: dict, game_label: str) -> str:
              if b.get("result_status", "").startswith("❌")]
     if wrong:
         lines.append(f"❌ *טעו:* {', '.join(wrong)}")
-        lines.append("")
-
-    # Top earners — only show when there were exact scores (interesting case)
-    # or when fewer than all correct-direction bettors (i.e. some got more)
-    total_correct_players = sum(len(v) for v in correct_by_winner.values())
-    if top_earners and top_earners[0] != "—" and (n_exact > 0 or len(top_earners) < total_correct_players):
-        earners_str = ", ".join(top_earners)
-        lines.append(f"🏆 *הרוויחו הכי הרבה:* {earners_str} ({top_pts} נק')")
         lines.append("")
 
     # No bet
