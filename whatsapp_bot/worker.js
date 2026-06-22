@@ -53,18 +53,17 @@ function nickname(name) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function sport5Post(type, token, body = {}) {
-  const url     = `${SPORT5_BASE}?type=${type}`;
-  const payload = new URLSearchParams({ token, ...body });
+  const url = `${SPORT5_BASE}?type=${type}`;
   console.log(`[sport5Post] POST ${url}`);
   const res  = await fetch(url, {
     method:  "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "application/json",
       "User-Agent":   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
       "Origin":       "https://hevre.sport5.co.il",
       "Referer":      "https://hevre.sport5.co.il/",
     },
-    body: payload.toString(),
+    body: JSON.stringify({ token, ...body }),
   });
   console.log(`[sport5Post] status=${res.status}`);
   const text = await res.text();
@@ -77,6 +76,7 @@ async function sport5Post(type, token, body = {}) {
   }
 }
 
+// Returns { token, guesses } — guesses contains all rounds/games for the logged-in user
 async function login(env) {
   const url = `${SPORT5_BASE}?type=loginUser`;
   console.log(`[login] POST ${url}`);
@@ -95,8 +95,8 @@ async function login(env) {
   try {
     const data = JSON.parse(text);
     if (!data.token) throw new Error("Login failed: " + JSON.stringify(data));
-    console.log(`[login] token obtained, keys in response: ${Object.keys(data).join(", ")}`);
-    return data.token;
+    console.log(`[login] token obtained, ${(data.guesses || []).length} rounds in response`);
+    return { token: data.token, guesses: data.guesses || [] };
   } catch (err) {
     console.error(`[login] Failed to parse JSON. Status: ${res.status}. Body preview: ${text.substring(0, 500)}`);
     throw err;
@@ -104,11 +104,37 @@ async function login(env) {
 }
 
 async function getLeaderboard(token) {
-  const data = await sport5Post("getGroup", token, { membersGroup: GROUP_ID });
+  const data    = await sport5Post("getGroup", token, { membersGroup: GROUP_ID });
   const members = data.members || [];
   return members
     .sort((a, b) => (b.points || 0) - (a.points || 0))
     .map((m, i) => ({ rank: i + 1, name: m.name, points: m.points || 0 }));
+}
+
+// Extract the game closest to now from the guesses array returned by login.
+// The timestamp field is called "beggining" (Sport5 API typo).
+function resolveLatestGame(guesses) {
+  const now = Date.now();
+  let best = null, bestDiff = Infinity;
+
+  for (const round of guesses) {
+    for (const g of round.games || []) {
+      const ts = g.beggining;
+      if (!ts) continue;
+      const diff = Math.abs(now - ts);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = {
+          gid:       g.gid,
+          team1:     g.team1?.name || "",
+          team2:     g.team2?.name || "",
+          roundName: round.name || "",
+        };
+      }
+    }
+  }
+
+  return best;
 }
 
 async function sendWhatsApp(env, to, message) {
@@ -146,46 +172,8 @@ function escapeXml(str) {
 
 // ── Command handlers ──────────────────────────────────────────────────────────
 
-/**
- * Fetch all games from Sport5 (via first member's guesses) and return the
- * one closest to now — i.e. the game that just started or most recently played.
- */
-async function resolveLatestGame(token) {
-  const groupData = await sport5Post("getGroup", token, { membersGroup: GROUP_ID });
-  const members   = groupData.members || [];
-  if (!members.length) throw new Error("No group members found");
-
-  const firstUid = members[0]?._id?.$oid || members[0]?.userId || "";
-  const guesses  = await sport5Post("getFriendGuesses", token,
-                                    { friendId: firstUid, groupId: GROUP_ID });
-
-  const now = Date.now();
-  let best = null, bestDiff = Infinity;
-
-  for (const round of guesses.guesses || []) {
-    for (const g of round.games || []) {
-      const raw = g.kickoff || g.startTime;
-      if (!raw) continue;
-      // Sport5 kickoff can be a Unix ms timestamp or an ISO string
-      const ts   = typeof raw === "number" ? raw : (String(raw).includes("T") ? new Date(raw).getTime() : parseInt(raw));
-      const diff = Math.abs(now - ts);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        best = {
-          gid:       g.gid,
-          team1:     g.team1?.name || "",
-          team2:     g.team2?.name || "",
-          roundName: round.name || "",
-        };
-      }
-    }
-  }
-
-  return best;
-}
-
 async function handleLeaderboard(env) {
-  const token = await login(env);
+  const { token } = await login(env);
   const board = await getLeaderboard(token);
 
   const medals = ["🥇", "🥈", "🥉"];
@@ -239,8 +227,8 @@ async function triggerWorkflow(env, gameId, gameLabel, runMode) {
 async function resolveGame(env, gameId, gameLabel) {
   if (gameId) return { gameId, gameLabel: gameLabel || gameId };
 
-  const token = await login(env);
-  const game  = await resolveLatestGame(token);
+  const { guesses } = await login(env);
+  const game = resolveLatestGame(guesses);
   if (!game) throw new Error("לא נמצא משחק");
 
   const label = game.team1 && game.team2
