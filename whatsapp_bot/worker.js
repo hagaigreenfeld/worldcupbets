@@ -111,24 +111,24 @@ async function getLeaderboard(token) {
     .map((m, i) => ({ rank: i + 1, name: m.name, points: m.points || 0 }));
 }
 
-// Extract the game closest to now from the guesses array returned by login.
-// The timestamp field is called "beggining" (Sport5 API typo).
+// Extract the most recent STARTED game from the guesses array returned by login.
+// "Started" means beggining <= now. The timestamp field is "beggining" (Sport5 API typo).
+// Returns { gid, team1, team2, roundName, kickoff } or null.
 function resolveLatestGame(guesses) {
   const now = Date.now();
-  let best = null, bestDiff = Infinity;
+  let best = null;
 
   for (const round of guesses) {
     for (const g of round.games || []) {
       const ts = g.beggining;
-      if (!ts) continue;
-      const diff = Math.abs(now - ts);
-      if (diff < bestDiff) {
-        bestDiff = diff;
+      if (!ts || ts > now) continue;   // skip future games
+      if (!best || ts > best.kickoff) {
         best = {
           gid:       g.gid,
           team1:     g.team1?.name || "",
           team2:     g.team2?.name || "",
           roundName: round.name || "",
+          kickoff:   ts,
         };
       }
     }
@@ -238,7 +238,7 @@ async function resolveGame(env, gameId, gameLabel) {
 
   const { guesses } = await login(env);
   const game = resolveLatestGame(guesses);
-  if (!game) throw new Error("לא נמצא משחק");
+  if (!game) throw new Error("אין משחק שהתחיל עדיין");
 
   const label = game.team1 && game.team2
     ? `${game.team1} vs ${game.team2}${game.roundName ? ` (${game.roundName})` : ""}`
