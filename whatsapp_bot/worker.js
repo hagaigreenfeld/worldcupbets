@@ -206,7 +206,8 @@ async function handleStatus() {
 async function triggerWorkflow(env, gameId, gameLabel, runMode, sender = "") {
   const repo = env.GITHUB_REPO; // e.g. "hagaigreenfeld/worldcupbets"
   if (!repo) throw new Error("GITHUB_REPO secret not set in Cloudflare");
-  if (!env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN secret not set in Cloudflare");
+  const token = (env.GITHUB_TOKEN || "").trim();
+  if (!token) throw new Error("GITHUB_TOKEN secret not set in Cloudflare");
 
   const url  = `https://api.github.com/repos/${repo}/actions/workflows/worldcup.yml/dispatches`;
   console.log(`[triggerWorkflow] POST ${url} mode=${runMode} game=${gameId}`);
@@ -214,7 +215,7 @@ async function triggerWorkflow(env, gameId, gameLabel, runMode, sender = "") {
   const res  = await fetch(url, {
     method:  "POST",
     headers: {
-      Authorization:  `Bearer ${env.GITHUB_TOKEN}`,
+      Authorization:  `Bearer ${token}`,
       "Content-Type": "application/json",
       Accept:         "application/vnd.github+json",
       "User-Agent":   "worldcupbets-bot",
