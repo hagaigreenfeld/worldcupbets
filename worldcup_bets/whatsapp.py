@@ -113,8 +113,12 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
     active_bonus = bonus_for_teams(bonus_bets or [], team1, team2)
     if active_bonus:
         lines.append("⭐ *בונוס שחקן במשחק הזה:*")
+        by_player: dict[str, list] = {}
         for b in active_bonus:
-            lines.append(f"  {b['nickname']} — {b['player']} ({b['team_he']}) +2 לכל שער")
+            key = (b["player"], b["team_he"])
+            by_player.setdefault(key, []).append(b["nickname"])
+        for (player, team_he), nicknames in by_player.items():
+            lines.append(f"  {player} ({team_he}) +2 נק' לכל שער: {', '.join(nicknames)}")
         lines.append("")
 
     # What-if scenario
@@ -323,8 +327,12 @@ def format_kickoff_message(bets: list[dict], game_label: str, bonus_bets: list =
     if active_bonus:
         lines.append("")
         lines.append("⭐ *שחקני בונוס במשחק:*")
+        by_player: dict[str, list] = {}
         for b in active_bonus:
-            lines.append(f"  {b['nickname']} מהמר על {b['player']} ({b['team_he']}) — +2 נק' לכל שער")
+            key = (b["player"], b["team_he"])
+            by_player.setdefault(key, []).append(b["nickname"])
+        for (player, team_he), nicknames in by_player.items():
+            lines.append(f"  {player} ({team_he}): {', '.join(nicknames)}")
 
     # Quick tension stats
     team1_count = len(score_clusters_for_winner(score_clusters, "team1_side", team1)) + len(direction_only.get("team1", []))
