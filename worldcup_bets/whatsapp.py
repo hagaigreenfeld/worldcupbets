@@ -160,13 +160,7 @@ def push_to_whatsapp(message: str, worker_url: Optional[str] = None, secret: Opt
             log.error("WhatsApp push failed (to=%s): %s", to or "default", exc)
             return False
 
-    ok = _send()  # always send to WHATSAPP_GROUP_ID (default)
-
-    # Also send to the original sender if they're different
-    if sender and sender != os.environ.get("WHATSAPP_GROUP_ID", ""):
-        _send(sender)
-
-    return ok
+    return _send()  # send to WHATSAPP_GROUP_ID (group members including sender will see it)
 
 
 def format_kickoff_message(bets: list[dict], game_label: str) -> str:
