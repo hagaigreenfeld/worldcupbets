@@ -53,17 +53,18 @@ function nickname(name) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function sport5Post(type, token, body = {}) {
-  const url = `${SPORT5_BASE}?type=${type}`;
+  const url     = `${SPORT5_BASE}?type=${type}`;
+  const payload = new URLSearchParams({ token, ...body });
   console.log(`[sport5Post] POST ${url}`);
   const res  = await fetch(url, {
     method:  "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
       "User-Agent":   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
       "Origin":       "https://hevre.sport5.co.il",
       "Referer":      "https://hevre.sport5.co.il/",
     },
-    body:    JSON.stringify({ token, ...body }),
+    body: payload.toString(),
   });
   console.log(`[sport5Post] status=${res.status}`);
   const text = await res.text();
