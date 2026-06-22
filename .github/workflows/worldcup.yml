@@ -31,25 +31,8 @@ on:
           - kickoff
           - post-game
 
-  # ── Automatic schedule ──────────────────────────────────────────────────────
-  # Each cron fires 1 minute after kickoff (UTC times).
-  # World Cup 2026 typical kickoff slots: 00:00 / 03:00 / 06:00 / 21:00 / 00:00 UTC
-  #
-  # ADD ONE LINE PER GAME below in the format:
-  #   - cron: 'MM HH DD MM *'   # Team A vs Team B
-  #
-  # Example lines (fill in real dates/times):
-  schedule:
-    # ── Group Stage ────────────────────────────────────────────────────────────
-    - cron: '1 22 11 6 *'    # Opening game
-    - cron: '1 1  12 6 *'
-    - cron: '1 4  12 6 *'
-    - cron: '1 7  12 6 *'
-    # ... (add all 48 group stage games + knockout rounds)
-    #
-    # TIP: generate the full list from:
-    #   python3 scripts/generate_crons.py
-    # which reads the schedule from football-data.org and prints all cron lines.
+  # Automatic scheduling is handled by scheduler.yml (polls every 15 min).
+  # Use this workflow only for manual overrides or re-runs.
 
 env:
   SPORT5_EMAIL:           ${{ secrets.SPORT5_EMAIL }}

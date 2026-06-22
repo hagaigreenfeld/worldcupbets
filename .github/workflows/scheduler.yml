@@ -1,0 +1,39 @@
+name: ⏰ Auto Scheduler
+
+# Polls every 15 minutes.
+# Detects game state transitions and fires kickoff / post-game messages.
+# State is persisted in the "Scheduler State" Google Sheet tab — safe to restart.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}   # manual trigger for testing
+
+env:
+  SPORT5_EMAIL:           ${{ secrets.SPORT5_EMAIL }}
+  SPORT5_PASSWORD:        ${{ secrets.SPORT5_PASSWORD }}
+  GOOGLE_SHEETS_KEY_JSON: ${{ secrets.GOOGLE_SHEETS_KEY_JSON }}
+  GOOGLE_SHEET_ID:        ${{ secrets.GOOGLE_SHEET_ID }}
+  FOOTBALL_DATA_API_KEY:  ${{ secrets.FOOTBALL_DATA_API_KEY }}
+  WORKER_URL:             ${{ secrets.WORKER_URL }}
+  PUSH_SECRET:            ${{ secrets.PUSH_SECRET }}
+
+jobs:
+  schedule:
+    name: Check & fire game events
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run scheduler
+        working-directory: worldcup_bets
+        run: python3 scheduler.py
