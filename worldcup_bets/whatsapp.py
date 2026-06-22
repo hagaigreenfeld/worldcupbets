@@ -65,12 +65,6 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
     is_final = summary.get("is_final", True)
     result_label = "תוצאה סופית" if is_final else "תוצאת ביניים"
 
-    # Reverse score for RTL display: "2:0" stored as team1:team2,
-    # but in RTL the rightmost number reads first, so flip to show correctly.
-    def rtl_score(score: str) -> str:
-        parts = score.split(":")
-        return ":".join(reversed(parts)) if len(parts) == 2 else score
-
     lines = [
         f"⚽ *{game}*",
         f"📊 {result_label}: *{rtl_score(result)}*",
@@ -143,6 +137,12 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         lines.append(f"...ועוד {len(board) - 10} שחקנים")
 
     return "\n".join(lines)
+
+
+def rtl_score(score: str) -> str:
+    """Flip 'team1:team2' to 'team2:team1' for correct RTL display in WhatsApp."""
+    parts = score.split(":")
+    return ":".join(reversed(parts)) if len(parts) == 2 else score
 
 
 STATUS_EMOJI = {"exact": "🎯", "correct": "✅", "wrong": "❌"}
@@ -281,13 +281,17 @@ def format_kickoff_message(bets: list[dict], game_label: str) -> str:
         f"🎯 *הימורי תוצאות:*",
     ]
 
+    def fmt_pts(v) -> str:
+        f = float(v) if v else 0
+        return str(int(f)) if f == int(f) else str(f)
+
     # Sort clusters by number of pickers desc, then by score string
     sorted_scores = sorted(score_clusters.items(), key=lambda x: (-len(x[1]), x[0]))
     if sorted_scores:
         for score, players in sorted_scores:
             names = ", ".join(p["name"] for p in players)
-            pot   = players[0]["pot"]
-            lines.append(f"  *{score}* — {names} ({pot} נק')")
+            pot   = fmt_pts(players[0]["pot"])
+            lines.append(f"  *{rtl_score(score)}* — {names} ({pot} נק')")
     else:
         lines.append("  אין הימורי תוצאה")
 
