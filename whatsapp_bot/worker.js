@@ -205,9 +205,13 @@ async function handleStatus() {
  */
 async function triggerWorkflow(env, gameId, gameLabel, runMode) {
   const repo = env.GITHUB_REPO; // e.g. "hagaigreenfeld/worldcupbets"
-  const url  = `https://api.github.com/repos/${repo}/actions/workflows/worldcup.yml/dispatches`;
+  if (!repo) throw new Error("GITHUB_REPO secret not set in Cloudflare");
+  if (!env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN secret not set in Cloudflare");
 
-  const res = await fetch(url, {
+  const url  = `https://api.github.com/repos/${repo}/actions/workflows/worldcup.yml/dispatches`;
+  console.log(`[triggerWorkflow] POST ${url} mode=${runMode} game=${gameId}`);
+
+  const res  = await fetch(url, {
     method:  "POST",
     headers: {
       Authorization:  `Bearer ${env.GITHUB_TOKEN}`,
@@ -221,7 +225,12 @@ async function triggerWorkflow(env, gameId, gameLabel, runMode) {
     }),
   });
 
-  return res.status; // 204 = success
+  if (res.status !== 204) {
+    const body = await res.text();
+    console.error(`[triggerWorkflow] failed status=${res.status} body=${body}`);
+    throw new Error(`GitHub API status ${res.status}: ${body.substring(0, 200)}`);
+  }
+  return res.status;
 }
 
 async function resolveGame(env, gameId, gameLabel) {
@@ -245,11 +254,12 @@ async function handleKickoff(env, gameId, gameLabel) {
     return `❌ לא הצלחתי למצוא משחק: ${err.message}`;
   }
 
-  const status = await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "kickoff");
-  if (status === 204) {
-    return `⚽ *${resolved.gameLabel}*\n🚀 שולף ניחושים... תקבל הודעה בעוד ~30 שניות`;
+  try {
+    await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "kickoff");
+  } catch (err) {
+    return `❌ שגיאה בהפעלת הניחושים: ${err.message}`;
   }
-  return `❌ שגיאה בהפעלת הניחושים (status ${status}). בדוק את GITHUB_TOKEN.`;
+  return `⚽ *${resolved.gameLabel}*\n🚀 שולף ניחושים... תקבל הודעה בעוד ~30 שניות`;
 }
 
 async function handlePostGame(env, gameId, gameLabel) {
@@ -260,11 +270,12 @@ async function handlePostGame(env, gameId, gameLabel) {
     return `❌ לא הצלחתי למצוא משחק: ${err.message}`;
   }
 
-  const status = await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "post-game");
-  if (status === 204) {
-    return `⚽ *${resolved.gameLabel}*\n📊 מחשב תוצאות... תקבל סיכום בעוד ~60 שניות`;
+  try {
+    await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "post-game");
+  } catch (err) {
+    return `❌ שגיאה בהפעלת התוצאות: ${err.message}`;
   }
-  return `❌ שגיאה (status ${status}). בדוק את GITHUB_TOKEN.`;
+  return `⚽ *${resolved.gameLabel}*\n📊 מחשב תוצאות... תקבל סיכום בעוד ~60 שניות`;
 }
 
 // Parse "ניחושים abc123 ארגנטינה vs ברזיל" → { cmd, gameId, gameLabel }
