@@ -208,8 +208,11 @@ def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False
             if loses_all:
                 lines.append(f"    ❌ מפסידים: {', '.join(nickname(c['player']) for c in loses_all)}")
             if bonus_side:
+                by_player: dict[str, list] = {}
                 for b in bonus_side:
-                    lines.append(f"    ⭐ +2 בונוס: {b['nickname']} (הימר על {b['player']})")
+                    by_player.setdefault(b["player"], []).append(b["nickname"])
+                for player, nicknames in by_player.items():
+                    lines.append(f"    ⭐ +2 בונוס על {player}: {', '.join(nicknames)}")
 
     return "\n".join(lines)
 
