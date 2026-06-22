@@ -169,18 +169,23 @@ def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False
         if not changes:
             lines.append("    — אין שינויים בניחושים")
         else:
-            gains = [c for c in changes if c["to"] in ("exact", "correct") and c["from"] == "wrong"]
-            gains += [c for c in changes if c["to"] == "exact" and c["from"] == "correct"]
-            loses = [c for c in changes if c["to"] == "wrong"]
-            loses += [c for c in changes if c["to"] == "correct" and c["from"] == "exact"]
+            exact_winners  = [c for c in changes if c["to"] == "exact"]
+            dir_gainers    = [c for c in changes if c["to"] == "correct" and c["from"] != "exact"]
+            loses_exact    = [c for c in changes if c["from"] == "exact" and c["to"] != "exact"]
+            loses_all      = [c for c in changes if c["to"] == "wrong"]
 
-            if gains:
-                names = ", ".join(nickname(c["player"]) for c in gains)
-                labels = [f"{STATUS_EMOJI[c['to']]} {STATUS_HE[c['to']]}" for c in gains]
-                lines.append(f"    📈 מרוויחים: {names}")
-            if loses:
-                names = ", ".join(nickname(c["player"]) for c in loses)
-                lines.append(f"    📉 מפסידים: {names}")
+            if exact_winners:
+                names = ", ".join(nickname(c["player"]) for c in exact_winners)
+                lines.append(f"    🎯 ניחוש מדויק: {names}")
+            if dir_gainers:
+                names = ", ".join(nickname(c["player"]) for c in dir_gainers)
+                lines.append(f"    ✅ מרוויחים כיוון: {names}")
+            if loses_exact:
+                names = ", ".join(nickname(c["player"]) for c in loses_exact)
+                lines.append(f"    💔 מאבדים ניחוש מדויק: {names}")
+            if loses_all:
+                names = ", ".join(nickname(c["player"]) for c in loses_all)
+                lines.append(f"    ❌ מפסידים: {names}")
 
     return "\n".join(lines)
 
