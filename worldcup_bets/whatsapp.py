@@ -131,26 +131,39 @@ def format_game_summary(analysis: dict, game_label: str) -> str:
 def push_to_whatsapp(message: str, worker_url: Optional[str] = None, secret: Optional[str] = None) -> bool:
     """
     POST the formatted message to the Cloudflare Worker /push endpoint.
+    Sends to WHATSAPP_GROUP_ID, and also to SENDER if set and different.
     Returns True on success.
     """
     worker_url = worker_url or os.environ.get("WORKER_URL", "")
     secret     = secret     or os.environ.get("PUSH_SECRET", "")
+    sender     = os.environ.get("SENDER", "").strip()
 
     if not worker_url:
         log.warning("WORKER_URL not set — skipping WhatsApp push")
         return False
 
     endpoint = worker_url.rstrip("/") + "/push"
-    payload  = {"secret": secret, "message": message}
 
-    try:
-        resp = requests.post(endpoint, json=payload, timeout=15)
-        resp.raise_for_status()
-        log.info("WhatsApp push sent ✅  status=%s", resp.status_code)
-        return True
-    except Exception as exc:
-        log.error("WhatsApp push failed: %s", exc)
-        return False
+    def _send(to: Optional[str] = None) -> bool:
+        payload = {"secret": secret, "message": message}
+        if to:
+            payload["to"] = to
+        try:
+            resp = requests.post(endpoint, json=payload, timeout=15)
+            resp.raise_for_status()
+            log.info("WhatsApp push sent ✅  to=%s status=%s", to or "default", resp.status_code)
+            return True
+        except Exception as exc:
+            log.error("WhatsApp push failed (to=%s): %s", to or "default", exc)
+            return False
+
+    ok = _send()  # always send to WHATSAPP_GROUP_ID (default)
+
+    # Also send to the original sender if they're different
+    if sender and sender != os.environ.get("WHATSAPP_GROUP_ID", ""):
+        _send(sender)
+
+    return ok
 
 
 def format_kickoff_message(bets: list[dict], game_label: str) -> str:

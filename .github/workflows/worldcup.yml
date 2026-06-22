@@ -30,6 +30,10 @@ on:
         options:
           - kickoff
           - post-game
+      sender:
+        description: "WhatsApp sender number to also notify (e.g. whatsapp:+972501234567)"
+        required: false
+        default: ""
 
   # Automatic scheduling is handled by scheduler.yml (polls every 15 min).
   # Use this workflow only for manual overrides or re-runs.
@@ -43,6 +47,7 @@ env:
   WORKER_URL:             ${{ secrets.WORKER_URL }}
   PUSH_SECRET:            ${{ secrets.PUSH_SECRET }}
   RUN_MODE:               ${{ github.event.inputs.run_mode || 'post-game' }}
+  SENDER:                 ${{ github.event.inputs.sender || '' }}
 
 jobs:
   scrape:

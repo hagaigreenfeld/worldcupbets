@@ -203,7 +203,7 @@ async function handleStatus() {
  * Trigger GitHub Actions workflow_dispatch for kickoff or post-game mode.
  * gameId and gameLabel come from the WhatsApp message.
  */
-async function triggerWorkflow(env, gameId, gameLabel, runMode) {
+async function triggerWorkflow(env, gameId, gameLabel, runMode, sender = "") {
   const repo = env.GITHUB_REPO; // e.g. "hagaigreenfeld/worldcupbets"
   if (!repo) throw new Error("GITHUB_REPO secret not set in Cloudflare");
   if (!env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN secret not set in Cloudflare");
@@ -221,7 +221,7 @@ async function triggerWorkflow(env, gameId, gameLabel, runMode) {
     },
     body: JSON.stringify({
       ref:    "main",
-      inputs: { game_id: gameId, game_label: gameLabel, run_mode: runMode },
+      inputs: { game_id: gameId, game_label: gameLabel, run_mode: runMode, sender },
     }),
   });
 
@@ -246,7 +246,7 @@ async function resolveGame(env, gameId, gameLabel) {
   return { gameId: game.gid, gameLabel: label };
 }
 
-async function handleKickoff(env, gameId, gameLabel) {
+async function handleKickoff(env, gameId, gameLabel, sender) {
   let resolved;
   try {
     resolved = await resolveGame(env, gameId, gameLabel);
@@ -255,14 +255,14 @@ async function handleKickoff(env, gameId, gameLabel) {
   }
 
   try {
-    await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "kickoff");
+    await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "kickoff", sender);
   } catch (err) {
     return `❌ שגיאה בהפעלת הניחושים: ${err.message}`;
   }
   return `⚽ *${resolved.gameLabel}*\n🚀 שולף ניחושים... תקבל הודעה בעוד ~30 שניות`;
 }
 
-async function handlePostGame(env, gameId, gameLabel) {
+async function handlePostGame(env, gameId, gameLabel, sender) {
   let resolved;
   try {
     resolved = await resolveGame(env, gameId, gameLabel);
@@ -271,7 +271,7 @@ async function handlePostGame(env, gameId, gameLabel) {
   }
 
   try {
-    await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "post-game");
+    await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "post-game", sender);
   } catch (err) {
     return `❌ שגיאה בהפעלת התוצאות: ${err.message}`;
   }
@@ -323,8 +323,8 @@ async function handleWebhook(request, env) {
     if      (cmd === "leaderboard") reply = await handleLeaderboard(env);
     else if (cmd === "help")        reply = await handleHelp();
     else if (cmd === "status")      reply = await handleStatus();
-    else if (cmd === "kickoff")     reply = await handleKickoff(env, gameId, gameLabel);
-    else if (cmd === "post-game")   reply = await handlePostGame(env, gameId, gameLabel);
+    else if (cmd === "kickoff")     reply = await handleKickoff(env, gameId, gameLabel, from);
+    else if (cmd === "post-game")   reply = await handlePostGame(env, gameId, gameLabel, from);
     else reply = "פקודה לא מוכרת.";
 
     return twimlReply(reply);
@@ -354,8 +354,9 @@ async function handlePush(request, env) {
   const message = payload.message;
   if (!message) return new Response("No message", { status: 400 });
 
-  // Send to the configured WhatsApp recipient (group or individual)
-  const result = await sendWhatsApp(env, env.WHATSAPP_GROUP_ID, message);
+  // Send to specified `to`, or fall back to the configured group number
+  const to = payload.to || env.WHATSAPP_GROUP_ID;
+  const result = await sendWhatsApp(env, to, message);
   return new Response(JSON.stringify(result), {
     headers: { "Content-Type": "application/json" },
   });
