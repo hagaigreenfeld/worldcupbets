@@ -197,6 +197,11 @@ def write_game_summary(
     ws = ensure_tab(spreadsheet, "Game Summary")
     existing = ws.get_all_values()
 
+    # Skip if this game was already written
+    if any(row and row[0] == game_label for row in existing[1:]):
+        log.info("Game Summary: row for '%s' already exists — skipping", game_label)
+        return
+
     headers = [
         "Game Label", "Teams", "Actual Result",
         "Picked Team 1", "Picked Team 2", "Picked Draw", "No Bet",
