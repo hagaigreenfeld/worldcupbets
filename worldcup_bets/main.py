@@ -81,7 +81,15 @@ def main():
         return
 
     # ── POST-GAME mode ──────────────────────────────────────────────────────
+    # Read bets from sheet (written at kickoff) and re-scrape to get final points
     log.info("▶ Analyzing results...")
+    if not args.dry_run:
+        sheet_bets = sheets.read_bets_for_game(
+            sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"]), game_label
+        )
+        if sheet_bets:
+            log.info("  Read %d bets from sheet", len(sheet_bets))
+            bets = sheet_bets
     analysis = analyzer.analyze(bets, leaderboard)
     summary  = analysis["summary"]
 

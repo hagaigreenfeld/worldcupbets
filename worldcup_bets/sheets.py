@@ -72,27 +72,33 @@ def write_leaderboard(spreadsheet: gspread.Spreadsheet, leaderboard: list[dict])
     log.info("Leaderboard tab updated (%d players)", len(leaderboard))
 
 
+BETS_HEADERS = [
+    "Game", "Round", "Player", "Team 1", "Team 2",
+    "Guessed Winner", "Score Guess",
+    "Actual Result", "Points Won", "Potential Points",
+    "Scraped At",
+]
+
+
 def write_bets(
     spreadsheet: gspread.Spreadsheet,
     bets: list[dict],
     game_label: str,
 ) -> None:
+    """Write bets for a game. Skips silently if rows for this game already exist."""
     ws = ensure_tab(spreadsheet, "All Bets")
-
-    # Read existing data to append (or write headers if empty)
     existing = ws.get_all_values()
-    headers = [
-        "Game", "Round", "Player", "Team 1", "Team 2",
-        "Guessed Winner", "Score Guess",
-        "Actual Result", "Status", "Points Won", "Potential Points",
-        "Scraped At",
-    ]
+
+    # Skip if this game was already written
+    if any(row and row[0] == game_label for row in existing[1:]):
+        log.info("All Bets: rows for '%s' already exist — skipping write", game_label)
+        return
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     new_rows = []
 
     if not existing:
-        new_rows.append(headers)
+        new_rows.append(BETS_HEADERS)
 
     for b in bets:
         new_rows.append([
@@ -101,10 +107,9 @@ def write_bets(
             b.get("player_name", ""),
             b.get("team1", ""),
             b.get("team2", ""),
-            b.get("guessed_team_name", b.get("guess_winner", "")),
+            b.get("guess_winner", ""),
             b.get("score_guess", ""),
             b.get("actual_result", ""),
-            b.get("result_status", ""),
             b.get("points_won", ""),
             b.get("potential_points", ""),
             now,
@@ -115,7 +120,73 @@ def write_bets(
     else:
         ws.update(new_rows, value_input_option="USER_ENTERED")
 
-    log.info("All Bets tab: appended %d rows for %s", len(bets), game_label)
+    log.info("All Bets tab: wrote %d rows for %s", len(bets), game_label)
+
+
+def update_bets_results(
+    spreadsheet: gspread.Spreadsheet,
+    bets: list[dict],
+    game_label: str,
+) -> None:
+    """After a game finishes, update actual_result and points_won columns in existing rows."""
+    ws = ensure_tab(spreadsheet, "All Bets")
+    rows = ws.get_all_values()
+    if not rows:
+        return
+
+    headers = rows[0]
+    try:
+        game_col   = headers.index("Game")
+        player_col = headers.index("Player")
+        result_col = headers.index("Actual Result")
+        points_col = headers.index("Points Won")
+    except ValueError:
+        log.warning("All Bets tab headers not found — skipping result update")
+        return
+
+    bets_map = {b["player_name"]: b for b in bets}
+    updates  = []
+
+    for i, row in enumerate(rows[1:], start=2):  # 1-indexed, skip header
+        if not row or row[game_col] != game_label:
+            continue
+        player = row[player_col] if player_col < len(row) else ""
+        bet = bets_map.get(player)
+        if not bet:
+            continue
+        updates.append({"range": f"I{i}", "values": [[bet.get("actual_result", "")]]})
+        updates.append({"range": f"J{i}", "values": [[bet.get("points_won", "")]]})
+
+    if updates:
+        ws.spreadsheet.values_batch_update({"data": updates, "valueInputOption": "USER_ENTERED"})
+        log.info("Updated results for %d rows in All Bets", len(updates) // 2)
+
+
+def read_bets_for_game(spreadsheet: gspread.Spreadsheet, game_label: str) -> list[dict]:
+    """Read bets written at kickoff time for a given game."""
+    ws = ensure_tab(spreadsheet, "All Bets")
+    rows = ws.get_all_values()
+    if not rows:
+        return []
+
+    headers = rows[0]
+    result  = []
+    for row in rows[1:]:
+        if not row or row[0] != game_label:
+            continue
+        entry = dict(zip(headers, row))
+        result.append({
+            "player_name":      entry.get("Player", ""),
+            "round_name":       entry.get("Round", ""),
+            "team1":            entry.get("Team 1", ""),
+            "team2":            entry.get("Team 2", ""),
+            "guess_winner":     entry.get("Guessed Winner", ""),
+            "score_guess":      entry.get("Score Guess", ""),
+            "actual_result":    entry.get("Actual Result", ""),
+            "points_won":       float(entry.get("Points Won", 0) or 0),
+            "potential_points": float(entry.get("Potential Points", 0) or 0),
+        })
+    return result
 
 
 def write_game_summary(
@@ -169,13 +240,13 @@ def write_all(
     sheet_id: Optional[str] = None,
 ) -> None:
     """
-    Write everything to Google Sheets.
-    analysis = output from analyzer.analyze()
+    Post-game: update results in existing bet rows, write leaderboard + game summary.
+    Bets were already written at kickoff — do NOT write them again here.
     """
     sheet_id = sheet_id or os.environ["GOOGLE_SHEET_ID"]
     spreadsheet = get_sheet(sheet_id)
 
+    update_bets_results(spreadsheet, analysis["enriched_bets"], game_label)
     write_leaderboard(spreadsheet, analysis["leaderboard"])
-    write_bets(spreadsheet, analysis["enriched_bets"], game_label)
     write_game_summary(spreadsheet, analysis["summary"], game_label)
     log.info("All Sheets updated ✅")
