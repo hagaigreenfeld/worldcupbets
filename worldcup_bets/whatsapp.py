@@ -13,6 +13,33 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+NICKNAMES = {
+    "Nir mish":        "בבה",
+    "חיים אבירם":      "חיים",
+    "adam aviram":     "אדם הראשון",
+    "אלון גזית":       "גזה",
+    "asaf gazit":      "גזה ג׳וניור",
+    "חגי גרינפלד":     "חגי",
+    "אדם אבירם":       "אדם השני",
+    "מוטי דקל":        "מוטי",
+    "בני אוחיון":      "בני",
+    "אדיר":            "אדיר",
+    "Eran Gazit":      "אח של גזה",
+    "Avishay Shefer":  "אבישי",
+    "Reshef Elias":    "רשף",
+    "roi piro29":      "פירו",
+    "Rom Mishali":     "דוד ג׳וניור",
+    "סהר פירו":        "סהר פירו",
+    "Yoav Pais":       "יואב",
+    "יותם":            "יותם",
+    "Eran Sandel":     "סנדל",
+    "PIR0":            "פירו ג׳וניור",
+}
+
+
+def nickname(name: str) -> str:
+    return NICKNAMES.get(name.strip(), name)
+
 
 def format_game_summary(analysis: dict, game_label: str) -> str:
     """
@@ -77,7 +104,7 @@ def format_game_summary(analysis: dict, game_label: str) -> str:
         medal = medals[i] if i < 3 else f"{r['rank']}."
         delta = r.get("rank_delta", "")
         delta_str = f" {delta}" if delta and delta != "—" else ""
-        lines.append(f"{medal} {r['name']} — {r['points']} נק'{delta_str}")
+        lines.append(f"{medal} {nickname(r['name'])} — {r['points']} נק'{delta_str}")
 
     if len(board) > 10:
         lines.append(f"...ועוד {len(board) - 10} שחקנים")
@@ -136,6 +163,7 @@ def format_kickoff_message(bets: list[dict], game_label: str) -> str:
         winner = (b.get("guess_winner") or "").strip()
         pot = b.get("potential_points", 0)
 
+        name = nickname(name)
         if not winner or winner in ("N/A", ""):
             no_bet.append(name)
         elif score and score != "N/A":

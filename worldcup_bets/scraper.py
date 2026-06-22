@@ -30,8 +30,8 @@ def get_token(email: str, password: str) -> str:
     log.info("Logging in as %s", email)
     resp = requests.post(
         BASE_URL,
-        params={"type": "appUserLogin"},
-        data={"email": email, "password": password},
+        params={"type": "loginUser"},
+        json={"email": email, "password": password},
         timeout=15,
     )
     resp.raise_for_status()
@@ -44,13 +44,22 @@ def get_token(email: str, password: str) -> str:
 
 # ── API helpers ────────────────────────────────────────────────────────────────
 
+SPORT5_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+    "Origin":     "https://hevre.sport5.co.il",
+    "Referer":    "https://hevre.sport5.co.il/",
+    "Content-Type": "application/json",
+}
+
+
 def api_post(type_: str, token: str, **kwargs) -> dict:
-    """POST to data.php with type + token + optional extra fields."""
+    """POST to data.php with JSON body. getGroup requires JSON (not form-encoded)."""
     payload = {"token": token, **kwargs}
     resp = requests.post(
         BASE_URL,
         params={"type": type_},
-        data=payload,
+        json=payload,
+        headers=SPORT5_HEADERS,
         timeout=15,
     )
     resp.raise_for_status()
@@ -58,17 +67,30 @@ def api_post(type_: str, token: str, **kwargs) -> dict:
 
 
 def get_group_members(token: str) -> list[dict]:
-    """Return list of group members with name, userId, points."""
-    data = api_post("getGroup", token, groupId=GROUP_ID)
+    """Return list of group members with name, _id, points."""
+    data = api_post("getGroup", token, membersGroup=GROUP_ID)
     members = data.get("members", [])
     log.info("Fetched %d group members", len(members))
     return members
 
 
-def get_friend_guesses(token: str, friend_user_id: str) -> dict:
-    """Return all guesses for a specific member (by their userId / _id.$oid)."""
-    data = api_post("getFriendGuesses", token, friendId=friend_user_id, groupId=GROUP_ID)
-    return data
+def get_friend_guesses(token: str, friend_user_id: str) -> list:
+    """
+    Return all rounds (list) for a specific member.
+    Uses user/auid params — getFriendGuesses with friendId/groupId doesn't work.
+    Bet score is in team1.team1Guessed / team2.team2Guessed (not scoreGuess).
+    """
+    resp = requests.post(
+        BASE_URL,
+        params={"type": "getFriendGuesses"},
+        json={"user": friend_user_id, "auid": friend_user_id, "userEmail": ""},
+        headers=SPORT5_HEADERS,
+        timeout=15,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    # Returns a list of rounds directly (not wrapped in {"guesses": [...]})
+    return data if isinstance(data, list) else []
 
 
 def get_game_info() -> dict:
@@ -80,54 +102,95 @@ def get_game_info() -> dict:
 
 # ── Data extraction ────────────────────────────────────────────────────────────
 
-def extract_bets_for_game(member: dict, guesses: dict, game_id: str) -> Optional[dict]:
+def extract_bets_for_game(member: dict, rounds: list, game_id: str) -> Optional[dict]:
     """
-    From a member's full guesses object, pull out the bet for one specific game.
+    From a member's rounds list (returned by get_friend_guesses), pull out the
+    bet for one specific game.
 
-    guesses structure (observed):
-    {
-      "guesses": [
-        {
-          "name": "מחזור 1",
-          "fid": 0,
-          "games": [
-            {
-              "gid": "<game_id>",
-              "team1": { "name": "...", "tid": "...", "ratio": 150 },
-              "team2": { "name": "...", "tid": "...", "ratio": 80  },
-              "guess": "team1" | "team2" | "draw" | null,
-              "scoreGuess": "2:1",      # exact score guess
-              "fixtureResult": "2:0",   # actual result (if finished)
-              "pointsWon": 4,           # points earned
-              "potentialPoints": 4,     # max possible points
-              ...
-            }
-          ]
-        }
-      ]
-    }
+    Actual API structure (getFriendGuesses returns a list of rounds):
+    [
+      {
+        "name": "מחזור 1",
+        "games": [
+          {
+            "gid": "<game_id>",
+            "team1": { "name": "...", "team1Guessed": "2", ... },
+            "team2": { "name": "...", "team2Guessed": "1", ... },
+            "result1": "2",        # actual result goals (post-game)
+            "result2": "0",
+            "gamepoints": 4,       # points earned
+            "typeOfGuess": "exact" | "gettingthere" | "nothingyet" | "",
+          }
+        ]
+      }
+    ]
     """
     name    = member.get("name", "Unknown")
-    user_id = member.get("_id", {}).get("$oid", member.get("userId", ""))
+    user_id = member.get("_id", "")
 
-    for round_ in guesses.get("guesses", []):
+    for round_ in rounds:
         for game in round_.get("games", []):
             if game.get("gid") == game_id:
-                team1   = game.get("team1", {}).get("name", "")
-                team2   = game.get("team2", {}).get("name", "")
+                t1      = game.get("team1", {})
+                t2      = game.get("team2", {})
+                team1   = t1.get("name", "")
+                team2   = t2.get("name", "")
+                g1      = t1.get("team1Guessed")
+                g2      = t2.get("team2Guessed")
+
+                # Derive winner direction from guessed scores
+                if g1 is not None and g2 is not None:
+                    try:
+                        g1i, g2i = int(g1), int(g2)
+                        guess_winner = "team1" if g1i > g2i else ("team2" if g2i > g1i else "draw")
+                    except (ValueError, TypeError):
+                        guess_winner = ""
+                    score_guess = f"{g1}:{g2}"
+                else:
+                    guess_winner = ""
+                    score_guess  = ""
+
+                # Actual result from result1/result2
+                r1, r2 = game.get("result1"), game.get("result2")
+                actual_result = f"{r1}:{r2}" if r1 is not None and r2 is not None else ""
+
+                # Potential points: ratio for guessed direction × bonusExact (exact score)
+                pot = _calc_potential(game, guess_winner)
+
                 return {
                     "player_name":      name,
                     "user_id":          user_id,
                     "team1":            team1,
                     "team2":            team2,
-                    "guess_winner":     game.get("guess", ""),        # team1/team2/draw
-                    "score_guess":      game.get("scoreGuess", ""),   # e.g. "2:1"
-                    "actual_result":    game.get("fixtureResult", ""),
-                    "points_won":       game.get("pointsWon", 0),
-                    "potential_points": game.get("potentialPoints", 0),
+                    "guess_winner":     guess_winner,
+                    "score_guess":      score_guess,
+                    "actual_result":    actual_result,
+                    "points_won":       game.get("gamepoints", 0) or 0,
+                    "potential_points": pot,
                     "round_name":       round_.get("name", ""),
                 }
     return None
+
+
+def _calc_potential(game: dict, guess_winner: str) -> float:
+    """
+    Potential points for an exact-score guess:
+      ratio (direction multiplier) × pointsMultplyer × bonusExact
+    ratio1/ratio2/ratio3 are direct multipliers (e.g. 2.0, 5.5, 3.5).
+    """
+    try:
+        ratio_map = {
+            "team1": game.get("ratio1", 0),
+            "draw":  game.get("ratio2", 0),
+            "team2": game.get("ratio3", 0),
+        }
+        ratio  = ratio_map.get(guess_winner, 0) or 0
+        fd     = game.get("fixturedata", {})
+        mult   = fd.get("pointsMultplyer", 1) or 1
+        bonus  = fd.get("bonusExact", 4) or 4
+        return round(ratio * mult * bonus, 1)
+    except Exception:
+        return 0
 
 
 def scrape_all_bets_for_game(token: str, game_id: str) -> list[dict]:
@@ -138,7 +201,7 @@ def scrape_all_bets_for_game(token: str, game_id: str) -> list[dict]:
     all_rows = []
 
     for member in members:
-        uid = member.get("_id", {}).get("$oid", member.get("userId", ""))
+        uid = member.get("_id", "")
         name = member.get("name", "?")
         log.info("  → Fetching bets for %s (%s)", name, uid)
 
