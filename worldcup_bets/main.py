@@ -112,15 +112,16 @@ def main():
     # ── POST-GAME mode ──────────────────────────────────────────────────────
     log.info("▶ Analyzing results...")
     analysis = analyzer.analyze(bets, leaderboard)
+    summary = analysis["summary"]
+
     # Check live match status from football-data.org
-    team1  = summary.get("team1", "")
-    team2  = summary.get("team2", "")
+    team1     = summary.get("team1", "")
+    team2     = summary.get("team2", "")
     fd_status = os.environ.get("GAME_STATUS") or sched.check_game_status(
         team1, team2, api_key=os.environ.get("FOOTBALL_DATA_API_KEY")
     )
     log.info("Match status: %s", fd_status or "unknown")
-    analysis["summary"]["is_final"] = (fd_status == "FINISHED")
-    summary  = analysis["summary"]
+    summary["is_final"] = (fd_status == "FINISHED")
 
     log.info("  Game:    %s", summary.get("game", "?"))
     log.info("  Result:  %s", summary.get("actual_result", "Pending"))
