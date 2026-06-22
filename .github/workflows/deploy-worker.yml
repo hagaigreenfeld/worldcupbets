@@ -11,31 +11,35 @@ jobs:
   deploy:
     name: Deploy to Cloudflare Workers
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: whatsapp_bot
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy via Wrangler
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          workingDirectory: whatsapp_bot
-          secrets: |
-            GITHUB_TOKEN
-            TWILIO_ACCOUNT_SID
-            TWILIO_AUTH_TOKEN
-            WHATSAPP_GROUP_ID
-            SPORT5_EMAIL
-            SPORT5_PASSWORD
-            PUSH_SECRET
+      - name: Install Wrangler
+        run: npm install -g wrangler@3.90.0
+
+      - name: Deploy Worker
+        run: wrangler deploy
+        working-directory: whatsapp_bot
         env:
-          GITHUB_TOKEN:        ${{ secrets.CF_GITHUB_TOKEN }}
-          TWILIO_ACCOUNT_SID:  ${{ secrets.TWILIO_ACCOUNT_SID }}
-          TWILIO_AUTH_TOKEN:   ${{ secrets.TWILIO_AUTH_TOKEN }}
-          WHATSAPP_GROUP_ID:   ${{ secrets.WHATSAPP_GROUP_ID }}
-          SPORT5_EMAIL:        ${{ secrets.SPORT5_EMAIL }}
-          SPORT5_PASSWORD:     ${{ secrets.SPORT5_PASSWORD }}
-          PUSH_SECRET:         ${{ secrets.PUSH_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Upload secrets
+        working-directory: whatsapp_bot
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GITHUB_TOKEN_VAL:     ${{ secrets.CF_GITHUB_TOKEN }}
+          TWILIO_ACCOUNT_SID:   ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN:    ${{ secrets.TWILIO_AUTH_TOKEN }}
+          WHATSAPP_GROUP_ID:    ${{ secrets.WHATSAPP_GROUP_ID }}
+          SPORT5_EMAIL:         ${{ secrets.SPORT5_EMAIL }}
+          SPORT5_PASSWORD:      ${{ secrets.SPORT5_PASSWORD }}
+          PUSH_SECRET:          ${{ secrets.PUSH_SECRET }}
+        run: |
+          echo "$GITHUB_TOKEN_VAL"    | wrangler secret put GITHUB_TOKEN
+          echo "$TWILIO_ACCOUNT_SID"  | wrangler secret put TWILIO_ACCOUNT_SID
+          echo "$TWILIO_AUTH_TOKEN"   | wrangler secret put TWILIO_AUTH_TOKEN
+          echo "$WHATSAPP_GROUP_ID"   | wrangler secret put WHATSAPP_GROUP_ID
+          echo "$SPORT5_EMAIL"        | wrangler secret put SPORT5_EMAIL
+          echo "$SPORT5_PASSWORD"     | wrangler secret put SPORT5_PASSWORD
+          echo "$PUSH_SECRET"         | wrangler secret put PUSH_SECRET
