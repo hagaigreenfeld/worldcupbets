@@ -17,6 +17,7 @@ import scraper
 import analyzer
 import sheets
 import whatsapp
+import scheduler as sched
 
 logging.basicConfig(
     level=logging.INFO,
@@ -104,9 +105,14 @@ def main():
     # ── POST-GAME mode ──────────────────────────────────────────────────────
     log.info("▶ Analyzing results...")
     analysis = analyzer.analyze(bets, leaderboard)
-    # is_final=False by default (live game); scheduler sets GAME_STATUS=FINISHED when done
-    if os.environ.get("GAME_STATUS") == "FINISHED":
-        analysis["summary"]["is_final"] = True
+    # Check live match status from football-data.org
+    team1  = summary.get("team1", "")
+    team2  = summary.get("team2", "")
+    fd_status = os.environ.get("GAME_STATUS") or sched.check_game_status(
+        team1, team2, api_key=os.environ.get("FOOTBALL_DATA_API_KEY")
+    )
+    log.info("Match status: %s", fd_status or "unknown")
+    analysis["summary"]["is_final"] = (fd_status == "FINISHED")
     summary  = analysis["summary"]
 
     log.info("  Game:    %s", summary.get("game", "?"))

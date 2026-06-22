@@ -136,6 +136,37 @@ def resolve_sport5_game(fd_match: dict, sport5_games: list[dict]) -> Optional[di
     return None
 
 
+def check_game_status(team1: str, team2: str, api_key: Optional[str] = None) -> str:
+    """
+    Look up the live status of a match by Sport5 team names (Hebrew).
+    Returns football-data.org status string: FINISHED, IN_PLAY, PAUSED, SCHEDULED, etc.
+    Returns "" if the match cannot be found.
+    """
+    try:
+        headers = {}
+        if api_key:
+            headers["X-Auth-Token"] = api_key
+        url  = f"{FOOTBALL_DATA_BASE}/competitions/{WC_COMPETITION}/matches"
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        matches = resp.json().get("matches", [])
+    except Exception as exc:
+        log.warning("football-data.org status check failed: %s", exc)
+        return ""
+
+    for m in matches:
+        home = m["homeTeam"]["name"]
+        away = m["awayTeam"]["name"]
+        if (fuzzy_match(team1, home) or fuzzy_match(team1, away)) and \
+           (fuzzy_match(team2, home) or fuzzy_match(team2, away)):
+            status = m["status"]
+            log.info("Match status for %s vs %s: %s", team1, team2, status)
+            return status
+
+    log.warning("Could not find match in football-data.org for: %s vs %s", team1, team2)
+    return ""
+
+
 # ── Scheduler state (Google Sheets) ───────────────────────────────────────────
 
 def load_state(spreadsheet) -> dict:
@@ -256,8 +287,20 @@ def run():
             try:
                 bets, leaderboard = scraper.run(gid, email, password)
                 analysis          = analyzer.analyze(bets, leaderboard)
+                analysis["summary"]["is_final"] = True  # scheduler only fires post-game on FINISHED
                 sheets.write_all(analysis, game_label, sheet_id)
-                whatsapp.notify(analysis, game_label)
+
+                what_if = None
+                summary_s = analysis["summary"]
+                if summary_s.get("actual_result") not in ("", "Not yet played"):
+                    what_if = analyzer.what_if_analysis(analysis["enriched_bets"], summary_s["actual_result"])
+
+                prev_board = sheets.read_previous_leaderboard_snapshot(spreadsheet, game_label)
+                position_movers = analyzer.leaderboard_position_changes(
+                    analysis["leaderboard"], prev_board
+                ) if prev_board else None
+
+                whatsapp.notify(analysis, game_label, what_if=what_if, position_movers=position_movers)
                 game_state["postgame_sent"]    = True
                 game_state["postgame_sent_at"] = now_str
                 state_dirty = True
