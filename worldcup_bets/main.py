@@ -68,14 +68,16 @@ def main():
 
     # ── KICKOFF mode ────────────────────────────────────────────────────────
     if args.mode == "kickoff":
-        import json as _json
         if args.dry_run:
             log.info("DRY RUN — kickoff message preview only")
             print(whatsapp.format_kickoff_message(bets, game_label))
         else:
+            log.info("▶ Writing kickoff bets to Google Sheets...")
+            spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"])
+            sheets.write_bets(spreadsheet, bets, game_label)
             log.info("▶ Sending kickoff WhatsApp message...")
             whatsapp.notify_kickoff(bets, game_label)
-            log.info("✅ Kickoff message sent!")
+            log.info("✅ Kickoff done!")
         return
 
     # ── POST-GAME mode ──────────────────────────────────────────────────────
