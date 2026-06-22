@@ -41,9 +41,11 @@ def nickname(name: str) -> str:
     return NICKNAMES.get(name.strip(), name)
 
 
-def format_game_summary(analysis: dict, game_label: str) -> str:
+def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, position_movers: list = None) -> str:
     """
     Build a WhatsApp-friendly Hebrew post-game summary.
+    what_if: result of analyzer.what_if_analysis()
+    position_movers: result of analyzer.leaderboard_position_changes()
     """
     summary = analysis.get("summary", {})
     board   = analysis.get("leaderboard", [])
@@ -113,6 +115,20 @@ def format_game_summary(analysis: dict, game_label: str) -> str:
         lines.append(f"😭 *הידעת ולא הימרת?!* {', '.join(no_bet)}")
         lines.append("")
 
+    # What-if scenario (mid-game only)
+    if what_if:
+        block = format_what_if(what_if, team1, team2)
+        if block:
+            lines.append(block)
+            lines.append("")
+
+    # Position changes vs previous game
+    if position_movers:
+        block = format_position_changes(position_movers)
+        if block:
+            lines.append(block)
+            lines.append("")
+
     # Leaderboard
     lines.append("📋 *טבלה מעודכנת:*")
     medals = ["🥇", "🥈", "🥉"]
@@ -125,6 +141,65 @@ def format_game_summary(analysis: dict, game_label: str) -> str:
 
     if len(board) > 10:
         lines.append(f"...ועוד {len(board) - 10} שחקנים")
+
+    return "\n".join(lines)
+
+
+STATUS_EMOJI = {"exact": "🎯", "correct": "✅", "wrong": "❌"}
+STATUS_HE    = {"exact": "ניחוש מדויק", "correct": "כיוון נכון", "wrong": "טעות"}
+
+
+def format_what_if(what_if: dict, team1: str, team2: str) -> str:
+    """Format the what-if next-goal analysis block."""
+    if not what_if or "if_team1" not in what_if:
+        return ""
+
+    lines = ["", "🔮 *מה יקרה אם...*"]
+
+    for side, team_name in [("if_team1", team1), ("if_team2", team2)]:
+        scenario = what_if.get(side, {})
+        score    = scenario.get("score", "")
+        changes  = scenario.get("changes", [])
+
+        # Reverse score for RTL display
+        rtl_score = ":".join(reversed(score.split(":"))) if ":" in score else score
+        lines.append(f"  ⚽ *{team_name} תבקיע ({rtl_score}):*")
+
+        if not changes:
+            lines.append("    — אין שינויים בניחושים")
+        else:
+            gains = [c for c in changes if c["to"] in ("exact", "correct") and c["from"] == "wrong"]
+            gains += [c for c in changes if c["to"] == "exact" and c["from"] == "correct"]
+            loses = [c for c in changes if c["to"] == "wrong"]
+            loses += [c for c in changes if c["to"] == "correct" and c["from"] == "exact"]
+
+            if gains:
+                names = ", ".join(nickname(c["player"]) for c in gains)
+                labels = [f"{STATUS_EMOJI[c['to']]} {STATUS_HE[c['to']]}" for c in gains]
+                lines.append(f"    📈 מרוויחים: {names}")
+            if loses:
+                names = ", ".join(nickname(c["player"]) for c in loses)
+                lines.append(f"    📉 מפסידים: {names}")
+
+    return "\n".join(lines)
+
+
+def format_position_changes(movers: list[dict]) -> str:
+    """Format biggest leaderboard position movers block."""
+    if not movers:
+        return ""
+
+    significant = [m for m in movers if abs(m.get("rank_change", 0)) >= 1]
+    if not significant:
+        return ""
+
+    lines = ["", "📈 *שינויי מיקום מהמשחק הקודם:*"]
+    for m in significant[:5]:
+        delta = m["rank_change"]
+        arrow = f"⬆️ +{delta}" if delta > 0 else f"⬇️ {delta}"
+        pts_delta = m.get("points_change", 0)
+        pts_str   = f" (+{pts_delta:.0f} נק')" if pts_delta > 0 else ""
+        lines.append(f"  {arrow} {nickname(m['name'])}{pts_str}")
 
     return "\n".join(lines)
 
@@ -255,9 +330,9 @@ def score_clusters_for_winner(clusters: dict, _side: str, team_name: str) -> lis
     return result
 
 
-def notify(analysis: dict, game_label: str) -> None:
+def notify(analysis: dict, game_label: str, what_if: dict = None, position_movers: list = None) -> None:
     """Convenience wrapper called from main.py."""
-    msg = format_game_summary(analysis, game_label)
+    msg = format_game_summary(analysis, game_label, what_if=what_if, position_movers=position_movers)
     log.info("WhatsApp message preview:\n%s", msg)
     push_to_whatsapp(msg)
 

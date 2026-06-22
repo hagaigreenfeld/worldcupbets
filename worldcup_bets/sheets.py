@@ -189,6 +189,84 @@ def read_bets_for_game(spreadsheet: gspread.Spreadsheet, game_label: str) -> lis
     return result
 
 
+LEADERBOARD_HISTORY_HEADERS = ["Game", "Rank", "Player", "Points", "Saved At"]
+
+
+def save_leaderboard_snapshot(
+    spreadsheet: gspread.Spreadsheet,
+    leaderboard: list[dict],
+    game_label: str,
+) -> None:
+    """Append a leaderboard snapshot after each game for future comparison."""
+    ws = ensure_tab(spreadsheet, "Leaderboard History")
+    existing = ws.get_all_values()
+
+    # Skip if this game snapshot already saved
+    if any(row and row[0] == game_label for row in existing[1:]):
+        log.info("Leaderboard History: snapshot for '%s' already exists — skipping", game_label)
+        return
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    rows = []
+    if not existing:
+        rows.append(LEADERBOARD_HISTORY_HEADERS)
+    for r in leaderboard:
+        rows.append([game_label, r.get("rank", ""), r.get("name", ""), r.get("points", ""), now])
+
+    if existing:
+        ws.append_rows(rows, value_input_option="USER_ENTERED")
+    else:
+        ws.update(rows, value_input_option="USER_ENTERED")
+    log.info("Leaderboard History: saved %d rows for %s", len(leaderboard), game_label)
+
+
+def read_previous_leaderboard_snapshot(
+    spreadsheet: gspread.Spreadsheet,
+    current_game_label: str,
+) -> list[dict]:
+    """
+    Return the leaderboard snapshot for the game BEFORE current_game_label.
+    If none found, returns empty list.
+    """
+    try:
+        ws = ensure_tab(spreadsheet, "Leaderboard History")
+        rows = ws.get_all_values()
+    except Exception:
+        return []
+    if len(rows) < 2:
+        return []
+
+    headers = rows[0]
+    # Collect unique game labels in order of appearance
+    seen_games: list[str] = []
+    for row in rows[1:]:
+        if row and row[0] and row[0] not in seen_games:
+            seen_games.append(row[0])
+
+    # Find the game before current
+    try:
+        idx = seen_games.index(current_game_label)
+        prev_game = seen_games[idx - 1] if idx > 0 else None
+    except ValueError:
+        # current game not yet in history — use the last saved game
+        prev_game = seen_games[-1] if seen_games else None
+
+    if not prev_game:
+        return []
+
+    result = []
+    for row in rows[1:]:
+        if not row or row[0] != prev_game:
+            continue
+        entry = dict(zip(headers, row))
+        result.append({
+            "name":   entry.get("Player", ""),
+            "rank":   int(entry.get("Rank", 0) or 0),
+            "points": float(entry.get("Points", 0) or 0),
+        })
+    return result
+
+
 def write_game_summary(
     spreadsheet: gspread.Spreadsheet,
     summary: dict,
@@ -253,5 +331,6 @@ def write_all(
 
     update_bets_results(spreadsheet, analysis["enriched_bets"], game_label)
     write_leaderboard(spreadsheet, analysis["leaderboard"])
+    save_leaderboard_snapshot(spreadsheet, analysis["leaderboard"], game_label)
     write_game_summary(spreadsheet, analysis["summary"], game_label)
     log.info("All Sheets updated ✅")

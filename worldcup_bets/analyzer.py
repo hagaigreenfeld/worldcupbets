@@ -144,6 +144,99 @@ def leaderboard_delta(before: list[dict], after: list[dict]) -> list[dict]:
     return result
 
 
+def _parse_score(score: str) -> Optional[tuple[int, int]]:
+    try:
+        parts = score.replace("-", ":").split(":")
+        return int(parts[0]), int(parts[1])
+    except Exception:
+        return None
+
+
+def _winner_of(g1: int, g2: int) -> str:
+    if g1 > g2:
+        return "team1"
+    if g2 > g1:
+        return "team2"
+    return "draw"
+
+
+def _bet_status(bet: dict, score: str) -> str:
+    """Return 'exact', 'correct', or 'wrong' for a bet against a hypothetical score."""
+    parsed = _parse_score(score)
+    if parsed is None:
+        return "wrong"
+    g1, g2 = parsed
+    if bet.get("score_guess") == score:
+        return "exact"
+    if bet.get("guess_winner") == _winner_of(g1, g2):
+        return "correct"
+    return "wrong"
+
+
+def what_if_analysis(bets: list[dict], current_score: str) -> dict:
+    """
+    Given the current live score, compute what changes if team1 scores next
+    vs team2 scores next.
+
+    Returns:
+        {
+            "current": "2:0",
+            "if_team1": { "score": "3:0", "changes": [...] },
+            "if_team2": { "score": "2:1", "changes": [...] },
+        }
+    where each change is { "player", "from", "to" }.
+    """
+    parsed = _parse_score(current_score)
+    if parsed is None:
+        return {}
+    g1, g2 = parsed
+
+    result = {"current": current_score}
+    for side, (ng1, ng2) in [("if_team1", (g1 + 1, g2)), ("if_team2", (g1, g2 + 1))]:
+        new_score = f"{ng1}:{ng2}"
+        changes = []
+        for b in bets:
+            if not b.get("guess_winner") or b.get("guess_winner") in ("N/A", ""):
+                continue
+            old_s = _bet_status(b, current_score)
+            new_s = _bet_status(b, new_score)
+            if old_s != new_s:
+                changes.append({
+                    "player": b["player_name"],
+                    "bet":    b.get("score_guess", b.get("guess_winner", "")),
+                    "from":   old_s,
+                    "to":     new_s,
+                })
+        result[side] = {"score": new_score, "changes": changes}
+
+    return result
+
+
+def leaderboard_position_changes(
+    current: list[dict],
+    previous: list[dict],
+) -> list[dict]:
+    """
+    Compare current leaderboard to previous snapshot.
+    Returns entries sorted by absolute rank change desc, with delta fields.
+    """
+    prev_map = {r["name"]: r for r in previous}
+    rows = []
+    for r in current:
+        prev = prev_map.get(r["name"], {})
+        prev_rank   = prev.get("rank", r["rank"])
+        prev_points = float(prev.get("points", r.get("points", 0)))
+        rank_change  = prev_rank - r["rank"]   # positive = moved up
+        points_change = float(r.get("points", 0)) - prev_points
+        rows.append({
+            **r,
+            "prev_rank":     prev_rank,
+            "rank_change":   rank_change,
+            "points_change": points_change,
+        })
+    return sorted(rows, key=lambda x: abs(x["rank_change"]), reverse=True)
+
+
 def analyze(bets: list[dict], leaderboard: list[dict]) -> dict:
     """
     Full analysis bundle returned to sheets writer.

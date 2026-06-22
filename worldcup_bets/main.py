@@ -126,6 +126,24 @@ def main():
         print(f"  {r['rank']:2}. {r['name']:<22} {r['points']} pts  {r.get('rank_delta','')}")
     print("═" * 60 + "\n")
 
+    # What-if (only when game is still in progress)
+    what_if = None
+    if not summary.get("is_final") and summary.get("actual_result") not in ("", "Not yet played"):
+        what_if = analyzer.what_if_analysis(analysis["enriched_bets"], summary["actual_result"])
+
+    # Position movers vs previous game leaderboard
+    position_movers = None
+    if not args.dry_run:
+        try:
+            spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"])
+            prev_board  = sheets.read_previous_leaderboard_snapshot(spreadsheet, game_label)
+            if prev_board:
+                position_movers = analyzer.leaderboard_position_changes(
+                    analysis["leaderboard"], prev_board
+                )
+        except Exception as exc:
+            log.warning("Could not load previous leaderboard snapshot: %s", exc)
+
     if args.dry_run:
         log.info("DRY RUN — skipping Google Sheets write.")
         import json
@@ -134,7 +152,7 @@ def main():
         log.info("▶ Writing to Google Sheets...")
         sheets.write_all(analysis, game_label)
         log.info("▶ Sending WhatsApp summary...")
-        whatsapp.notify(analysis, game_label)
+        whatsapp.notify(analysis, game_label, what_if=what_if, position_movers=position_movers)
         log.info("✅ Done!")
 
 

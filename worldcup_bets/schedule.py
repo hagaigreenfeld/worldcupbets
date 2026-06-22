@@ -12,6 +12,7 @@ import json
 import logging
 import requests
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ SPORT5_INFO_URL    = "https://hevre.sport5.co.il/data/info.json"
 WC2026_COMPETITION = 2000   # FIFA World Cup on football-data.org
 
 
-def get_todays_matches(api_key: str | None = None) -> list[dict]:
+def get_todays_matches(api_key: Optional[str] = None) -> list[dict]:
     """
     Return today's World Cup matches from football-data.org.
     Each item: { id, homeTeam, awayTeam, utcDate, status, score }
@@ -69,7 +70,7 @@ def get_sport5_game_ids() -> dict:
     return info
 
 
-def get_next_game_info() -> dict | None:
+def get_next_game_info() -> Optional[dict]:
     """
     Returns the next unplayed game today (or None).
     Useful for cron jobs that run just before kickoff.

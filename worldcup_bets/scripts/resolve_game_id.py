@@ -22,6 +22,7 @@ import json
 import logging
 import requests
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ def get_sport5_games(token: str) -> list[dict]:
     return games
 
 
-def get_fd_todays_matches(api_key: str | None) -> list[dict]:
+def get_fd_todays_matches(api_key: Optional[str]) -> list[dict]:
     headers = {}
     if api_key:
         headers["X-Auth-Token"] = api_key
@@ -117,7 +118,7 @@ def fuzzy_match(name_a: str, name_b: str) -> bool:
     return a in b or b in a or a[:6] == b[:6]
 
 
-def find_current_game(sport5_games: list[dict], fd_matches: list[dict]) -> dict | None:
+def find_current_game(sport5_games: list[dict], fd_matches: list[dict]) -> Optional[dict]:
     now = datetime.now(timezone.utc)
 
     for fd in fd_matches:
