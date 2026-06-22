@@ -203,6 +203,16 @@ async function handleStatus() {
  * Trigger GitHub Actions workflow_dispatch for kickoff or post-game mode.
  * gameId and gameLabel come from the WhatsApp message.
  */
+// Returns true if this command was already triggered recently (within TTL seconds).
+// Uses KV for persistence across requests. Falls back to allowing if KV not set up.
+async function isDuplicate(env, key, ttlSeconds = 90) {
+  if (!env.DEDUP_KV) return false;
+  const existing = await env.DEDUP_KV.get(key);
+  if (existing) return true;
+  await env.DEDUP_KV.put(key, "1", { expirationTtl: ttlSeconds });
+  return false;
+}
+
 async function triggerWorkflow(env, gameId, gameLabel, runMode, sender = "") {
   const repo = env.GITHUB_REPO; // e.g. "hagaigreenfeld/worldcupbets"
   if (!repo) throw new Error("GITHUB_REPO secret not set in Cloudflare");
@@ -255,6 +265,11 @@ async function handleKickoff(env, gameId, gameLabel, sender) {
     return `❌ לא הצלחתי למצוא משחק: ${err.message}`;
   }
 
+  const dedupKey = `kickoff:${resolved.gameId}`;
+  if (await isDuplicate(env, dedupKey, 180)) {
+    return `⚽ *${resolved.gameLabel}*\n⏳ כבר בטיפול, תקבל הודעה בעוד רגע...`;
+  }
+
   try {
     await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "kickoff", sender);
   } catch (err) {
@@ -269,6 +284,11 @@ async function handlePostGame(env, gameId, gameLabel, sender) {
     resolved = await resolveGame(env, gameId, gameLabel);
   } catch (err) {
     return `❌ לא הצלחתי למצוא משחק: ${err.message}`;
+  }
+
+  const dedupKey = `postgame:${resolved.gameId}`;
+  if (await isDuplicate(env, dedupKey, 180)) {
+    return `⚽ *${resolved.gameLabel}*\n⏳ כבר בטיפול, תקבל סיכום בעוד רגע...`;
   }
 
   try {

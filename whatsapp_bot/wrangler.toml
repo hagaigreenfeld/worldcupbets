@@ -7,6 +7,11 @@ compatibility_date = "2024-01-01"
 GITHUB_REPO = "hagaigreenfeld/worldcupbets"
 TWILIO_FROM = "whatsapp:+14155238886"
 
+# ── KV namespace for command dedup (prevents double-trigger within 3 min) ─────
+[[kv_namespaces]]
+binding = "DEDUP_KV"
+id      = "95762a5aff37490ca2aad2435662d982"
+
 # ── Secrets (set ONCE in Cloudflare dashboard → Workers → your worker → Settings → Variables → add as Secret)
 # Secrets are encrypted and persist across deploys — you never need to re-enter them:
 #
