@@ -22,9 +22,13 @@ def _has_rtl(text: str) -> bool:
 
 
 def console_print(msg: str) -> None:
-    """Print Hebrew messages readably in a LTR terminal by reversing RTL lines."""
+    """Print Hebrew messages readably in a LTR terminal.
+    Reverses word order on RTL lines so numbers/words stay intact."""
     for line in msg.split("\n"):
-        print(line[::-1] if _has_rtl(line) else line)
+        if _has_rtl(line):
+            print(" ".join(reversed(line.split(" "))))
+        else:
+            print(line)
 
 EMAIL    = os.environ.get("SPORT5_EMAIL",    "hagaigreenfeld@gmail.com")
 PASSWORD = os.environ.get("SPORT5_PASSWORD", "Worldcuphagai12++")
