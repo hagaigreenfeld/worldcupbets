@@ -175,33 +175,21 @@ def format_kickoff_message(bets: list[dict], game_label: str) -> str:
         f"⚽ *{game_label}*",
         f"🟢 *המשחק מתחיל!*",
         "",
-        f"🎯 *ניחושי תוצאה מדויקת:*",
+        f"🎯 *הימורי תוצאות:*",
     ]
 
     # Sort clusters by number of pickers desc, then by score string
     sorted_scores = sorted(score_clusters.items(), key=lambda x: (-len(x[1]), x[0]))
     if sorted_scores:
         for score, players in sorted_scores:
-            player_strs = [f"{p['name']} ({p['pot']} נק')" for p in players]
-            lines.append(f"  *{score}* — {', '.join(player_strs)}")
+            names = ", ".join(p["name"] for p in players)
+            pot   = players[0]["pot"]
+            lines.append(f"  *{score}* — {names} ({pot} נק')")
     else:
-        lines.append("  אין ניחושי תוצאה מדויקת")
-
-    lines += ["", "📈 *ניחושי כיוון בלבד:*"]
-
-    winner_emoji = {"team1": "🔵", "team2": "🔴", "draw": "⚪"}
-    winner_label = {"team1": team1, "team2": team2, "draw": "תיקו"}
-
-    for outcome in ["team1", "team2", "draw"]:
-        players = direction_only.get(outcome, [])
-        if players:
-            emoji = winner_emoji[outcome]
-            label = winner_label[outcome]
-            player_strs = [f"{p['name']} ({p['pot']} נק')" for p in players]
-            lines.append(f"  {emoji} *{label}*: {', '.join(player_strs)}")
+        lines.append("  אין הימורי תוצאה")
 
     if no_bet:
-        lines += ["", f"😶 לא ניחשו: {', '.join(no_bet)}"]
+        lines += ["", f"😭 *הידעת ולא הימרת?!* {', '.join(no_bet)}"]
 
     # Quick tension stats
     team1_count = len(score_clusters_for_winner(score_clusters, "team1_side", team1)) + len(direction_only.get("team1", []))
