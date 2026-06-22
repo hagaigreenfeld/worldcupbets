@@ -106,18 +106,17 @@ def get_sport5_games(token: str) -> list[dict]:
     if not members:
         raise RuntimeError("No Sport5 group members found")
 
-    first_uid = members[0].get("_id", {}).get("$oid", members[0].get("userId", ""))
-    guesses   = scraper.api_post("getFriendGuesses", token,
-                                  friendId=first_uid, groupId=scraper.GROUP_ID)
+    first_uid = members[0].get("_id", "")
+    rounds    = scraper.get_friend_guesses(token, first_uid)
     games = []
-    for round_ in guesses.get("guesses", []):
+    for round_ in rounds:
         for g in round_.get("games", []):
             games.append({
                 "gid":        g.get("gid", ""),
                 "team1":      g.get("team1", {}).get("name", ""),
                 "team2":      g.get("team2", {}).get("name", ""),
                 "round_name": round_.get("name", ""),
-                "fixture_result": g.get("fixtureResult", ""),
+                "beggining":  g.get("beggining", 0),
             })
     return games
 
@@ -242,6 +241,7 @@ def run():
             log.info("  → Sending kickoff message for %s", game_label)
             try:
                 bets, _ = scraper.run(gid, email, password)
+                sheets.write_bets(spreadsheet, bets, game_label)
                 whatsapp.notify_kickoff(bets, game_label)
                 game_state["kickoff_sent"]    = True
                 game_state["kickoff_sent_at"] = now_str

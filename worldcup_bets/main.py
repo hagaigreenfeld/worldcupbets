@@ -61,35 +61,44 @@ def main():
     email    = os.environ["SPORT5_EMAIL"]
     password = os.environ["SPORT5_PASSWORD"]
 
-    # ── Scrape ──────────────────────────────────────────────────────────────
-    log.info("▶ Scraping bets for game: %s  [mode=%s]", game_label, args.mode)
-    bets, leaderboard = scraper.run(game_id, email, password)
-    log.info("  Scraped %d player bets", len(bets))
-
     # ── KICKOFF mode ────────────────────────────────────────────────────────
     if args.mode == "kickoff":
+        bets = []
+
+        # Try sheet first — bets written at game start are immutable
+        if not args.dry_run:
+            try:
+                spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"])
+                bets = sheets.read_bets_for_game(spreadsheet, game_label)
+                if bets:
+                    log.info("▶ Read %d bets from sheet (no Sport5 call needed)", len(bets))
+            except Exception as exc:
+                log.warning("Could not read from sheet: %s — will scrape instead", exc)
+
+        # Fall back to Sport5 scrape if sheet was empty
+        if not bets:
+            log.info("▶ Scraping bets from Sport5 for: %s", game_label)
+            bets, _ = scraper.run(game_id, email, password)
+            log.info("  Scraped %d player bets", len(bets))
+            if not args.dry_run:
+                log.info("▶ Writing kickoff bets to Google Sheets...")
+                sheets.write_bets(spreadsheet, bets, game_label)
+
         if args.dry_run:
-            log.info("DRY RUN — kickoff message preview only")
             print(whatsapp.format_kickoff_message(bets, game_label))
         else:
-            log.info("▶ Writing kickoff bets to Google Sheets...")
-            spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"])
-            sheets.write_bets(spreadsheet, bets, game_label)
             log.info("▶ Sending kickoff WhatsApp message...")
             whatsapp.notify_kickoff(bets, game_label)
             log.info("✅ Kickoff done!")
         return
 
+    # ── Scrape for post-game (needs fresh points) ────────────────────────────
+    log.info("▶ Scraping bets for game: %s  [mode=%s]", game_label, args.mode)
+    bets, leaderboard = scraper.run(game_id, email, password)
+    log.info("  Scraped %d player bets", len(bets))
+
     # ── POST-GAME mode ──────────────────────────────────────────────────────
-    # Read bets from sheet (written at kickoff) and re-scrape to get final points
     log.info("▶ Analyzing results...")
-    if not args.dry_run:
-        sheet_bets = sheets.read_bets_for_game(
-            sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"]), game_label
-        )
-        if sheet_bets:
-            log.info("  Read %d bets from sheet", len(sheet_bets))
-            bets = sheet_bets
     analysis = analyzer.analyze(bets, leaderboard)
     summary  = analysis["summary"]
 
