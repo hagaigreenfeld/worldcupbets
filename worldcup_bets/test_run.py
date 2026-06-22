@@ -97,9 +97,9 @@ def main():
 
         label    = next((f"{b['team1']} vs {b['team2']}" for b in bets if b.get("team1")), DEFAULT_GAME_LABEL)
         analysis = analyzer.analyze(bets, leaderboard)
-        analysis["summary"]["is_final"] = False  # mark as in-progress
+        analysis["summary"]["is_final"] = False  # mark as in-progress (change to True to test post-game title)
 
-        # What-if
+        # What-if — always compute regardless of is_final
         what_if = analyzer.what_if_analysis(analysis["enriched_bets"], live_score)
 
         # Position movers from sheet

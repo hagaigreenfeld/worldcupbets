@@ -115,9 +115,9 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         lines.append(f"😭 *הידעת ולא הימרת?!* {', '.join(no_bet)}")
         lines.append("")
 
-    # What-if scenario (mid-game only)
+    # What-if scenario
     if what_if:
-        block = format_what_if(what_if, team1, team2)
+        block = format_what_if(what_if, team1, team2, is_final=is_final)
         if block:
             lines.append(block)
             lines.append("")
@@ -149,12 +149,13 @@ STATUS_EMOJI = {"exact": "🎯", "correct": "✅", "wrong": "❌"}
 STATUS_HE    = {"exact": "ניחוש מדויק", "correct": "כיוון נכון", "wrong": "טעות"}
 
 
-def format_what_if(what_if: dict, team1: str, team2: str) -> str:
+def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False) -> str:
     """Format the what-if next-goal analysis block."""
     if not what_if or "if_team1" not in what_if:
         return ""
 
-    lines = ["", "🔮 *מה יקרה אם...*"]
+    title = "🔮 *מה היה קורה אם... (כמה קרוב היה זה ;)*" if is_final else "🔮 *מה יקרה אם...*"
+    lines = ["", title]
 
     for side, team_name in [("if_team1", team1), ("if_team2", team2)]:
         scenario = what_if.get(side, {})

@@ -126,9 +126,9 @@ def main():
         print(f"  {r['rank']:2}. {r['name']:<22} {r['points']} pts  {r.get('rank_delta','')}")
     print("═" * 60 + "\n")
 
-    # What-if (only when game is still in progress)
+    # What-if — always show (title changes based on is_final)
     what_if = None
-    if not summary.get("is_final") and summary.get("actual_result") not in ("", "Not yet played"):
+    if summary.get("actual_result") not in ("", "Not yet played"):
         what_if = analyzer.what_if_analysis(analysis["enriched_bets"], summary["actual_result"])
 
     # Position movers vs previous game leaderboard
