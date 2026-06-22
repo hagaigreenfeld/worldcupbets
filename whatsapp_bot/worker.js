@@ -145,6 +145,44 @@ function escapeXml(str) {
 
 // ── Command handlers ──────────────────────────────────────────────────────────
 
+/**
+ * Fetch all games from Sport5 (via first member's guesses) and return the
+ * one closest to now — i.e. the game that just started or most recently played.
+ */
+async function resolveLatestGame(token) {
+  const groupData = await sport5Post("getGroup", token, { membersGroup: GROUP_ID });
+  const members   = groupData.members || [];
+  if (!members.length) throw new Error("No group members found");
+
+  const firstUid = members[0]?._id?.$oid || members[0]?.userId || "";
+  const guesses  = await sport5Post("getFriendGuesses", token,
+                                    { friendId: firstUid, groupId: GROUP_ID });
+
+  const now = Date.now();
+  let best = null, bestDiff = Infinity;
+
+  for (const round of guesses.guesses || []) {
+    for (const g of round.games || []) {
+      const raw = g.kickoff || g.startTime;
+      if (!raw) continue;
+      // Sport5 kickoff can be a Unix ms timestamp or an ISO string
+      const ts   = typeof raw === "number" ? raw : (String(raw).includes("T") ? new Date(raw).getTime() : parseInt(raw));
+      const diff = Math.abs(now - ts);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = {
+          gid:       g.gid,
+          team1:     g.team1?.name || "",
+          team2:     g.team2?.name || "",
+          roundName: round.name || "",
+        };
+      }
+    }
+  }
+
+  return best;
+}
+
 async function handleLeaderboard(env) {
   const token = await login(env);
   const board = await getLeaderboard(token);
@@ -162,8 +200,8 @@ async function handleHelp() {
   return `🤖 *פקודות הבוט*
 
 *טבלה* — טבלת הניקוד הנוכחית
-*ניחושים <game_id>* — שליפת ניחושים לפני משחק (מפעיל GitHub Actions)
-*תוצאות <game_id>* — סיכום ניקוד אחרי משחק
+*ניחושים* — שליפת ניחושים למשחק האחרון/הנוכחי
+*תוצאות* — סיכום ניקוד למשחק האחרון
 *עזרה* — הצגת פקודות זמינות
 *סטטוס* — הבוט חי ומוכן ✅`;
 }
@@ -197,30 +235,45 @@ async function triggerWorkflow(env, gameId, gameLabel, runMode) {
   return res.status; // 204 = success
 }
 
+async function resolveGame(env, gameId, gameLabel) {
+  if (gameId) return { gameId, gameLabel: gameLabel || gameId };
+
+  const token = await login(env);
+  const game  = await resolveLatestGame(token);
+  if (!game) throw new Error("לא נמצא משחק");
+
+  const label = game.team1 && game.team2
+    ? `${game.team1} vs ${game.team2}${game.roundName ? ` (${game.roundName})` : ""}`
+    : game.gid;
+  return { gameId: game.gid, gameLabel: label };
+}
+
 async function handleKickoff(env, gameId, gameLabel) {
-  if (!gameId) {
-    return '📋 שלח: *ניחושים <game_id> <label>*\nדוגמה: ניחושים abc123 "ארגנטינה vs ברזיל"';
+  let resolved;
+  try {
+    resolved = await resolveGame(env, gameId, gameLabel);
+  } catch (err) {
+    return `❌ לא הצלחתי למצוא משחק: ${err.message}`;
   }
 
-  const label = gameLabel || gameId;
-  const status = await triggerWorkflow(env, gameId, label, "kickoff");
-
+  const status = await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "kickoff");
   if (status === 204) {
-    return `⚽ *${label}*\n🚀 שולף ניחושים... תקבל הודעה בעוד ~30 שניות`;
+    return `⚽ *${resolved.gameLabel}*\n🚀 שולף ניחושים... תקבל הודעה בעוד ~30 שניות`;
   }
   return `❌ שגיאה בהפעלת הניחושים (status ${status}). בדוק את GITHUB_TOKEN.`;
 }
 
 async function handlePostGame(env, gameId, gameLabel) {
-  if (!gameId) {
-    return '📋 שלח: *תוצאות <game_id> <label>*\nדוגמה: תוצאות abc123 "ארגנטינה vs ברזיל"';
+  let resolved;
+  try {
+    resolved = await resolveGame(env, gameId, gameLabel);
+  } catch (err) {
+    return `❌ לא הצלחתי למצוא משחק: ${err.message}`;
   }
 
-  const label = gameLabel || gameId;
-  const status = await triggerWorkflow(env, gameId, label, "post-game");
-
+  const status = await triggerWorkflow(env, resolved.gameId, resolved.gameLabel, "post-game");
   if (status === 204) {
-    return `⚽ *${label}*\n📊 מחשב תוצאות... תקבל סיכום בעוד ~60 שניות`;
+    return `⚽ *${resolved.gameLabel}*\n📊 מחשב תוצאות... תקבל סיכום בעוד ~60 שניות`;
   }
   return `❌ שגיאה (status ${status}). בדוק את GITHUB_TOKEN.`;
 }
