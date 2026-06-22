@@ -41,7 +41,7 @@ def nickname(name: str) -> str:
     return NICKNAMES.get(name.strip(), name)
 
 
-def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, position_movers: list = None) -> str:
+def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, position_movers: list = None, bonus_bets: list = None) -> str:
     """
     Build a WhatsApp-friendly Hebrew post-game summary.
     what_if: result of analyzer.what_if_analysis()
@@ -109,9 +109,17 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         lines.append(f"😭 *הידעת ולא הימרת?!* {', '.join(no_bet)}")
         lines.append("")
 
+    # Bonus players in this match
+    active_bonus = bonus_for_teams(bonus_bets or [], team1, team2)
+    if active_bonus:
+        lines.append("⭐ *בונוס שחקן במשחק הזה:*")
+        for b in active_bonus:
+            lines.append(f"  {b['nickname']} — {b['player']} ({b['team_en']}) +2 לכל שער")
+        lines.append("")
+
     # What-if scenario
     if what_if:
-        block = format_what_if(what_if, team1, team2, is_final=is_final)
+        block = format_what_if(what_if, team1, team2, is_final=is_final, bonus_bets=active_bonus)
         if block:
             lines.append(block)
             lines.append("")
@@ -149,7 +157,18 @@ STATUS_EMOJI = {"exact": "🎯", "correct": "✅", "wrong": "❌"}
 STATUS_HE    = {"exact": "ניחוש מדויק", "correct": "כיוון נכון", "wrong": "טעות"}
 
 
-def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False) -> str:
+def bonus_for_teams(bonus_bets: list[dict], team1_he: str, team2_he: str) -> list[dict]:
+    """Return bonus bets whose player's team matches team1 or team2 (Hebrew names)."""
+    result = []
+    for b in bonus_bets:
+        if not b.get("player") or not b.get("team_he"):
+            continue
+        if b["team_he"] in (team1_he, team2_he):
+            result.append({**b, "side": "team1" if b["team_he"] == team1_he else "team2"})
+    return result
+
+
+def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False, bonus_bets: list = None) -> str:
     """Format the what-if next-goal analysis block."""
     if not what_if or "if_team1" not in what_if:
         return ""
@@ -157,35 +176,36 @@ def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False
     title = "🔮 *מה היה קורה אם... (כמה קרוב היה זה ;)*" if is_final else "🔮 *מה יקרה אם...*"
     lines = ["", title]
 
-    for side, team_name in [("if_team1", team1), ("if_team2", team2)]:
+    bonus_team1 = [b for b in (bonus_bets or []) if b.get("side") == "team1"]
+    bonus_team2 = [b for b in (bonus_bets or []) if b.get("side") == "team2"]
+
+    for side, team_name, bonus_side in [("if_team1", team1, bonus_team1), ("if_team2", team2, bonus_team2)]:
         scenario = what_if.get(side, {})
         score    = scenario.get("score", "")
         changes  = scenario.get("changes", [])
 
-        # Reverse score for RTL display
         rtl_score = ":".join(reversed(score.split(":"))) if ":" in score else score
         lines.append(f"  ⚽ *{team_name} תבקיע ({rtl_score}):*")
 
-        if not changes:
+        if not changes and not bonus_side:
             lines.append("    — אין שינויים בניחושים")
         else:
-            exact_winners  = [c for c in changes if c["to"] == "exact"]
-            dir_gainers    = [c for c in changes if c["to"] == "correct" and c["from"] != "exact"]
-            loses_exact    = [c for c in changes if c["from"] == "exact" and c["to"] != "exact"]
-            loses_all      = [c for c in changes if c["to"] == "wrong"]
+            exact_winners = [c for c in changes if c["to"] == "exact"]
+            dir_gainers   = [c for c in changes if c["to"] == "correct" and c["from"] != "exact"]
+            loses_exact   = [c for c in changes if c["from"] == "exact" and c["to"] != "exact"]
+            loses_all     = [c for c in changes if c["to"] == "wrong"]
 
             if exact_winners:
-                names = ", ".join(nickname(c["player"]) for c in exact_winners)
-                lines.append(f"    🎯 ניחוש מדויק: {names}")
+                lines.append(f"    🎯 ניחוש מדויק: {', '.join(nickname(c['player']) for c in exact_winners)}")
             if dir_gainers:
-                names = ", ".join(nickname(c["player"]) for c in dir_gainers)
-                lines.append(f"    ✅ מרוויחים כיוון: {names}")
+                lines.append(f"    ✅ מרוויחים כיוון: {', '.join(nickname(c['player']) for c in dir_gainers)}")
             if loses_exact:
-                names = ", ".join(nickname(c["player"]) for c in loses_exact)
-                lines.append(f"    💔 מאבדים ניחוש מדויק: {names}")
+                lines.append(f"    💔 מאבדים ניחוש מדויק: {', '.join(nickname(c['player']) for c in loses_exact)}")
             if loses_all:
-                names = ", ".join(nickname(c["player"]) for c in loses_all)
-                lines.append(f"    ❌ מפסידים: {names}")
+                lines.append(f"    ❌ מפסידים: {', '.join(nickname(c['player']) for c in loses_all)}")
+            if bonus_side:
+                for b in bonus_side:
+                    lines.append(f"    ⭐ +2 בונוס: {b['nickname']} (הימר על {b['player']})")
 
     return "\n".join(lines)
 
@@ -242,7 +262,7 @@ def push_to_whatsapp(message: str, worker_url: Optional[str] = None, secret: Opt
     return _send()  # send to WHATSAPP_GROUP_ID (group members including sender will see it)
 
 
-def format_kickoff_message(bets: list[dict], game_label: str) -> str:
+def format_kickoff_message(bets: list[dict], game_label: str, bonus_bets: list = None) -> str:
     """
     Pre-game message sent at kickoff.
     Clusters bets by exact score guess, shows potential points per player.
@@ -298,6 +318,14 @@ def format_kickoff_message(bets: list[dict], game_label: str) -> str:
     if no_bet:
         lines += ["", f"😭 *הידעת ולא הימרת?!* {', '.join(no_bet)}"]
 
+    # Bonus players active in this match
+    active_bonus = bonus_for_teams(bonus_bets or [], team1, team2)
+    if active_bonus:
+        lines.append("")
+        lines.append("⭐ *שחקני בונוס במשחק:*")
+        for b in active_bonus:
+            lines.append(f"  {b['nickname']} מהמר על {b['player']} ({b['team_en']}) — +2 נק' לכל שער")
+
     # Quick tension stats
     team1_count = len(score_clusters_for_winner(score_clusters, "team1_side", team1)) + len(direction_only.get("team1", []))
     team2_count = len(score_clusters_for_winner(score_clusters, "team2_side", team2)) + len(direction_only.get("team2", []))
@@ -340,15 +368,15 @@ def score_clusters_for_winner(clusters: dict, _side: str, team_name: str) -> lis
     return result
 
 
-def notify(analysis: dict, game_label: str, what_if: dict = None, position_movers: list = None) -> None:
+def notify(analysis: dict, game_label: str, what_if: dict = None, position_movers: list = None, bonus_bets: list = None) -> None:
     """Convenience wrapper called from main.py."""
-    msg = format_game_summary(analysis, game_label, what_if=what_if, position_movers=position_movers)
+    msg = format_game_summary(analysis, game_label, what_if=what_if, position_movers=position_movers, bonus_bets=bonus_bets)
     log.info("WhatsApp message preview:\n%s", msg)
     push_to_whatsapp(msg)
 
 
-def notify_kickoff(bets: list[dict], game_label: str) -> None:
+def notify_kickoff(bets: list[dict], game_label: str, bonus_bets: list = None) -> None:
     """Send pre-game kickoff cluster message."""
-    msg = format_kickoff_message(bets, game_label)
+    msg = format_kickoff_message(bets, game_label, bonus_bets=bonus_bets)
     log.info("Kickoff WhatsApp message preview:\n%s", msg)
     push_to_whatsapp(msg)

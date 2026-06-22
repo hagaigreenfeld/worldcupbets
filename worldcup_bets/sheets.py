@@ -189,6 +189,75 @@ def read_bets_for_game(spreadsheet: gspread.Spreadsheet, game_label: str) -> lis
     return result
 
 
+BONUS_BETS_TAB = "Nicknames"
+
+# English team name → Hebrew (Sport5 uses Hebrew; bonus sheet uses English)
+TEAM_EN_TO_HE: dict[str, str] = {
+    "France": "צרפת", "Brazil": "ברזיל", "Argentina": "ארגנטינה",
+    "Germany": "גרמניה", "Spain": "ספרד", "England": "אנגליה",
+    "Portugal": "פורטוגל", "Netherlands": "הולנד", "Belgium": "בלגיה",
+    "Italy": "איטליה", "Uruguay": "אורוגוואי", "Mexico": "מקסיקו",
+    "United States": "ארה\"ב", "USA": "ארה\"ב",
+    "Japan": "יפן", "Australia": "אוסטרליה", "Morocco": "מרוקו",
+    "Senegal": "סנגל", "Croatia": "קרואטיה", "Poland": "פולין",
+    "Switzerland": "שוויץ", "Denmark": "דנמרק", "Serbia": "סרביה",
+    "Ecuador": "אקוודור", "Cameroon": "קמרון", "Ghana": "גאנה",
+    "South Korea": "קוריאה", "Iran": "איראן", "Saudi Arabia": "ערב הסעודית",
+    "Canada": "קנדה", "Colombia": "קולומביה", "Venezuela": "ונצואלה",
+    "Austria": "אוסטריה", "Hungary": "הונגריה", "Turkey": "טורקיה",
+    "Ukraine": "אוקראינה", "New Zealand": "ניו זילנד", "Egypt": "מצרים",
+    "Iraq": "עיראק", "Nigeria": "ניגריה", "Ivory Coast": "חוף השנהב",
+    "Algeria": "אלג'יריה", "Tunisia": "תוניסיה", "Slovakia": "סלובקיה",
+    "Czechia": "צ'כיה", "Czech Republic": "צ'כיה", "Romania": "רומניה",
+    "Scotland": "סקוטלנד", "Slovenia": "סלובניה", "Albania": "אלבניה",
+    "Georgia": "גאורגיה", "Paraguay": "פרגוואי", "Peru": "פרו",
+    "Honduras": "הונדורס", "Costa Rica": "קוסטה ריקה", "Panama": "פנמה",
+    "Bahrain": "בחריין", "Uzbekistan": "אוזבקיסטן", "Indonesia": "אינדונזיה",
+    "China": "סין", "Chile": "צ'ילה", "Bolivia": "בוליביה",
+}
+
+
+def team_en_to_he(english: str) -> str:
+    return TEAM_EN_TO_HE.get(english.strip(), english.strip())
+
+
+def read_bonus_bets(spreadsheet: gspread.Spreadsheet) -> list[dict]:
+    """
+    Read member bonus picks from the Nicknames tab.
+    Returns list of dicts: {board_name, nickname, player, team_en, team_he, winner_team_he}
+    """
+    try:
+        ws = ensure_tab(spreadsheet, BONUS_BETS_TAB)
+        rows = ws.get_all_values()
+    except Exception as exc:
+        log.warning("Could not read bonus bets tab: %s", exc)
+        return []
+
+    if len(rows) < 2:
+        return []
+
+    headers = [h.strip().lower() for h in rows[0]]
+    result  = []
+    for row in rows[1:]:
+        if not any(row):
+            continue
+        entry    = dict(zip(headers, row))
+        team_en  = entry.get("players team", "").strip()
+        winner   = entry.get("winner team", "").strip()
+        result.append({
+            "board_name":     entry.get("booard name", "").strip(),
+            "nickname":       entry.get("nickname", "").strip(),
+            "player":         entry.get("player", "").strip(),
+            "team_en":        team_en,
+            "team_he":        team_en_to_he(team_en),
+            "winner_team_en": winner,
+            "winner_team_he": team_en_to_he(winner),
+        })
+
+    log.info("Loaded %d bonus bets from Nicknames tab", len(result))
+    return result
+
+
 LEADERBOARD_HISTORY_HEADERS = ["Game", "Rank", "Player", "Points", "Saved At"]
 
 

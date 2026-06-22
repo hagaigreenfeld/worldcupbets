@@ -272,8 +272,9 @@ def run():
             log.info("  → Sending kickoff message for %s", game_label)
             try:
                 bets, _ = scraper.run(gid, email, password)
+                bonus_bets = sheets.read_bonus_bets(spreadsheet)
                 sheets.write_bets(spreadsheet, bets, game_label)
-                whatsapp.notify_kickoff(bets, game_label)
+                whatsapp.notify_kickoff(bets, game_label, bonus_bets=bonus_bets)
                 game_state["kickoff_sent"]    = True
                 game_state["kickoff_sent_at"] = now_str
                 state_dirty = True
@@ -300,7 +301,8 @@ def run():
                     analysis["leaderboard"], prev_board
                 ) if prev_board else None
 
-                whatsapp.notify(analysis, game_label, what_if=what_if, position_movers=position_movers)
+                bonus_bets_pg = sheets.read_bonus_bets(spreadsheet)
+                whatsapp.notify(analysis, game_label, what_if=what_if, position_movers=position_movers, bonus_bets=bonus_bets_pg)
                 game_state["postgame_sent"]    = True
                 game_state["postgame_sent_at"] = now_str
                 state_dirty = True

@@ -89,11 +89,18 @@ def main():
                 log.info("▶ Writing kickoff bets to Google Sheets...")
                 sheets.write_bets(spreadsheet, bets, game_label)
 
+        bonus_bets = []
+        if not args.dry_run:
+            try:
+                bonus_bets = sheets.read_bonus_bets(spreadsheet)
+            except Exception as exc:
+                log.warning("Could not load bonus bets: %s", exc)
+
         if args.dry_run:
             print(whatsapp.format_kickoff_message(bets, game_label))
         else:
             log.info("▶ Sending kickoff WhatsApp message...")
-            whatsapp.notify_kickoff(bets, game_label)
+            whatsapp.notify_kickoff(bets, game_label, bonus_bets=bonus_bets)
             log.info("✅ Kickoff done!")
         return
 
@@ -154,10 +161,15 @@ def main():
         import json
         print(json.dumps(analysis, indent=2, ensure_ascii=False, default=str))
     else:
+        bonus_bets = []
+        try:
+            bonus_bets = sheets.read_bonus_bets(spreadsheet)
+        except Exception as exc:
+            log.warning("Could not load bonus bets: %s", exc)
         log.info("▶ Writing to Google Sheets...")
         sheets.write_all(analysis, game_label)
         log.info("▶ Sending WhatsApp summary...")
-        whatsapp.notify(analysis, game_label, what_if=what_if, position_movers=position_movers)
+        whatsapp.notify(analysis, game_label, what_if=what_if, position_movers=position_movers, bonus_bets=bonus_bets)
         log.info("✅ Done!")
 
 

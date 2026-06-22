@@ -71,8 +71,9 @@ def main():
             if sp:
                 sheets.write_bets(sp, bets, DEFAULT_GAME_LABEL)
 
-        label = next((f"{b['team1']} vs {b['team2']}" for b in bets if b.get("team1")), DEFAULT_GAME_LABEL)
-        console_print(whatsapp.format_kickoff_message(bets, label))
+        label      = next((f"{b['team1']} vs {b['team2']}" for b in bets if b.get("team1")), DEFAULT_GAME_LABEL)
+        bonus_bets = sheets.read_bonus_bets(sp) if sp else []
+        console_print(whatsapp.format_kickoff_message(bets, label, bonus_bets=bonus_bets))
 
     elif mode == "post-game":
         print(f"Scraping bets for {game_id}...")
@@ -97,11 +98,13 @@ def main():
                     print(f"Loaded previous leaderboard for comparison\n")
             except Exception as e:
                 print(f"Could not load previous snapshot: {e}")
+            bonus_bets = sheets.read_bonus_bets(sp)
             sheets.write_all(analysis, label)
         else:
+            bonus_bets = []
             print("  (no sheet credentials — skipping Sheets write)")
 
-        console_print(whatsapp.format_game_summary(analysis, label, what_if=what_if, position_movers=position_movers))
+        console_print(whatsapp.format_game_summary(analysis, label, what_if=what_if, position_movers=position_movers, bonus_bets=bonus_bets))
 
     elif mode == "midgame":
         # Simulate תוצאות as if the game is still in progress
@@ -134,8 +137,10 @@ def main():
 
         # Position movers from sheet
         position_movers = None
+        bonus_bets      = []
         sp = get_sheet()
         if sp:
+            bonus_bets = sheets.read_bonus_bets(sp)
             try:
                 prev_board = sheets.read_previous_leaderboard_snapshot(sp, label)
                 if prev_board:
@@ -150,7 +155,7 @@ def main():
 
         print("=" * 60)
         console_print(whatsapp.format_game_summary(
-            analysis, label, what_if=what_if, position_movers=position_movers
+            analysis, label, what_if=what_if, position_movers=position_movers, bonus_bets=bonus_bets
         ))
 
     else:
