@@ -23,3 +23,19 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: whatsapp_bot
+          secrets: |
+            GITHUB_TOKEN
+            TWILIO_ACCOUNT_SID
+            TWILIO_AUTH_TOKEN
+            WHATSAPP_GROUP_ID
+            SPORT5_EMAIL
+            SPORT5_PASSWORD
+            PUSH_SECRET
+        env:
+          GITHUB_TOKEN:        ${{ secrets.CF_GITHUB_TOKEN }}
+          TWILIO_ACCOUNT_SID:  ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN:   ${{ secrets.TWILIO_AUTH_TOKEN }}
+          WHATSAPP_GROUP_ID:   ${{ secrets.WHATSAPP_GROUP_ID }}
+          SPORT5_EMAIL:        ${{ secrets.SPORT5_EMAIL }}
+          SPORT5_PASSWORD:     ${{ secrets.SPORT5_PASSWORD }}
+          PUSH_SECRET:         ${{ secrets.PUSH_SECRET }}
