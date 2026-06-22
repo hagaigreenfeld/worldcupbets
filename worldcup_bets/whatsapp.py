@@ -60,9 +60,12 @@ def format_game_summary(analysis: dict, game_label: str) -> str:
     n_wrong     = summary.get("total_wrong", 0)
     no_bet      = [nickname(n) for n in summary.get("no_bet", [])]
 
+    is_final = summary.get("is_final", True)
+    result_label = "תוצאה סופית" if is_final else "תוצאת ביניים"
+
     lines = [
         f"⚽ *{game}*",
-        f"📊 תוצאה סופית: *{result}*",
+        f"📊 {result_label}: *{result}*",
         "",
     ]
 

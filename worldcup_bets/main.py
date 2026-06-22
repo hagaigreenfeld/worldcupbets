@@ -104,6 +104,10 @@ def main():
     # ── POST-GAME mode ──────────────────────────────────────────────────────
     log.info("▶ Analyzing results...")
     analysis = analyzer.analyze(bets, leaderboard)
+    # Scheduler only triggers post-game on FINISHED — mark as final
+    # Manual תוצאות mid-game will have is_final=False (set by analyzer from actual_result)
+    if os.environ.get("GAME_STATUS") == "FINISHED":
+        analysis["summary"]["is_final"] = True
     summary  = analysis["summary"]
 
     log.info("  Game:    %s", summary.get("game", "?"))

@@ -104,6 +104,7 @@ def game_summary(bets: list[dict]) -> dict:
         "game":              f"{team1} vs {team2}",
         "team1":             team1,
         "team2":             team2,
+        "is_final":          bool(actual),
         "actual_result":     actual or "Not yet played",
         "picked_team1":      picks["team1"],
         "picked_team2":      picks["team2"],
