@@ -81,6 +81,7 @@ jobs:
 
       # ── 4. Scrape, analyze, write ───────────────────────────────────────────
       - name: Run scraper
+        working-directory: worldcup_bets
         run: |
           python3 main.py \
             --game-id    "${{ steps.resolve.outputs.game_id }}" \
