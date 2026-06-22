@@ -244,10 +244,13 @@ def read_bonus_bets(spreadsheet: gspread.Spreadsheet) -> list[dict]:
         entry    = dict(zip(headers, row))
         team_en  = entry.get("players team", "").strip()
         winner   = entry.get("winner team", "").strip()
+        player_en = entry.get("player", "").strip()
+        player_he = entry.get("player hebrew", "").strip() or entry.get("player_hebrew", "").strip() or player_en
         result.append({
             "board_name":     entry.get("booard name", "").strip(),
             "nickname":       entry.get("nickname", "").strip(),
-            "player":         entry.get("player", "").strip(),
+            "player":         player_he,   # Hebrew if available, else English
+            "player_en":      player_en,
             "team_en":        team_en,
             "team_he":        team_en_to_he(team_en),
             "winner_team_en": winner,
