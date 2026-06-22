@@ -289,15 +289,15 @@ function parseCommand(text) {
   if (["סטטוס", "status", "ping"].some(k => t.toLowerCase().includes(k)))
     return { cmd: "status" };
 
-  // "ניחושים <game_id> [label...]"
-  const kickoffMatch = t.match(/^ניחושים\s+(\S+)(?:\s+(.+))?$/);
+  // "ניחושים [game_id [label...]]" — game_id optional, defaults to latest game
+  const kickoffMatch = t.match(/^ניחושים(?:\s+(\S+)(?:\s+(.+))?)?$/);
   if (kickoffMatch)
-    return { cmd: "kickoff", gameId: kickoffMatch[1], gameLabel: kickoffMatch[2] || kickoffMatch[1] };
+    return { cmd: "kickoff", gameId: kickoffMatch[1] || null, gameLabel: kickoffMatch[2] || null };
 
-  // "תוצאות <game_id> [label...]" — manually trigger post-game analysis
-  const postGameMatch = t.match(/^תוצאות\s+(\S+)(?:\s+(.+))?$/);
+  // "תוצאות [game_id [label...]]" — game_id optional, defaults to latest game
+  const postGameMatch = t.match(/^תוצאות(?:\s+(\S+)(?:\s+(.+))?)?$/);
   if (postGameMatch)
-    return { cmd: "post-game", gameId: postGameMatch[1], gameLabel: postGameMatch[2] || postGameMatch[1] };
+    return { cmd: "post-game", gameId: postGameMatch[1] || null, gameLabel: postGameMatch[2] || null };
 
   return { cmd: null };
 }
