@@ -17,6 +17,7 @@ import os
 import json
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -40,12 +41,12 @@ def get_sheet(sheet_id: str) -> gspread.Spreadsheet:
 
 def ensure_tab(spreadsheet: gspread.Spreadsheet, title: str) -> gspread.Worksheet:
     """Return the worksheet named `title`, creating it if needed."""
-    try:
-        return spreadsheet.worksheet(title)
-    except gspread.WorksheetNotFound:
-        ws = spreadsheet.add_worksheet(title=title, rows=500, cols=30)
-        log.info("Created tab: %s", title)
-        return ws
+    for ws in spreadsheet.worksheets():
+        if ws.title.strip().lower() == title.strip().lower():
+            return ws
+    ws = spreadsheet.add_worksheet(title=title, rows=500, cols=30)
+    log.info("Created tab: %s", title)
+    return ws
 
 
 # ── Individual writers ─────────────────────────────────────────────────────────
@@ -165,7 +166,7 @@ def write_game_summary(
 def write_all(
     analysis: dict,
     game_label: str,
-    sheet_id: str | None = None,
+    sheet_id: Optional[str] = None,
 ) -> None:
     """
     Write everything to Google Sheets.
