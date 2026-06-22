@@ -80,12 +80,27 @@ def main():
         print(f"Got {len(bets)} bets\n")
         label    = next((f"{b['team1']} vs {b['team2']}" for b in bets if b.get("team1")), DEFAULT_GAME_LABEL)
         analysis = analyzer.analyze(bets, leaderboard)
+        summary  = analysis["summary"]
+
+        what_if = None
+        if summary.get("actual_result") not in ("", "Not yet played"):
+            what_if = analyzer.what_if_analysis(analysis["enriched_bets"], summary["actual_result"])
+
+        position_movers = None
         sp = get_sheet()
         if sp:
+            try:
+                prev_board = sheets.read_previous_leaderboard_snapshot(sp, label)
+                if prev_board:
+                    position_movers = analyzer.leaderboard_position_changes(analysis["leaderboard"], prev_board)
+                    print(f"Loaded previous leaderboard for comparison\n")
+            except Exception as e:
+                print(f"Could not load previous snapshot: {e}")
             sheets.write_all(analysis, label)
         else:
             print("  (no sheet credentials — skipping Sheets write)")
-        console_print(whatsapp.format_game_summary(analysis, label))
+
+        console_print(whatsapp.format_game_summary(analysis, label, what_if=what_if, position_movers=position_movers))
 
     elif mode == "midgame":
         # Simulate תוצאות as if the game is still in progress
