@@ -339,6 +339,27 @@ def read_previous_leaderboard_snapshot(
     return result
 
 
+def read_leaderboard(spreadsheet: gspread.Spreadsheet) -> list[dict]:
+    """Read current leaderboard from the Leaderboard tab."""
+    try:
+        ws   = ensure_tab(spreadsheet, "Leaderboard")
+        rows = ws.get_all_values()
+    except Exception:
+        return []
+    if len(rows) < 2:
+        return []
+    headers = rows[0]
+    result  = []
+    for i, row in enumerate(rows[1:]):
+        entry = dict(zip(headers, row))
+        result.append({
+            "rank":   int(entry.get("Rank", i + 1) or i + 1),
+            "name":   entry.get("Player", ""),
+            "points": float(entry.get("Points", 0) or 0),
+        })
+    return result
+
+
 def write_game_summary(
     spreadsheet: gspread.Spreadsheet,
     summary: dict,
@@ -393,13 +414,15 @@ def write_all(
     analysis: dict,
     game_label: str,
     sheet_id: Optional[str] = None,
+    spreadsheet: Optional[gspread.Spreadsheet] = None,
 ) -> None:
     """
     Post-game: update results in existing bet rows, write leaderboard + game summary.
     Bets were already written at kickoff — do NOT write them again here.
     """
-    sheet_id = sheet_id or os.environ["GOOGLE_SHEET_ID"]
-    spreadsheet = get_sheet(sheet_id)
+    if spreadsheet is None:
+        sheet_id = sheet_id or os.environ["GOOGLE_SHEET_ID"]
+        spreadsheet = get_sheet(sheet_id)
 
     update_bets_results(spreadsheet, analysis["enriched_bets"], game_label)
     write_leaderboard(spreadsheet, analysis["leaderboard"])

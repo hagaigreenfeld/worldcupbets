@@ -104,10 +104,26 @@ def main():
             log.info("✅ Kickoff done!")
         return
 
-    # ── Scrape for post-game (needs fresh points) ────────────────────────────
-    log.info("▶ Scraping bets for game: %s  [mode=%s]", game_label, args.mode)
-    bets, leaderboard = scraper.run(game_id, email, password)
-    log.info("  Scraped %d player bets", len(bets))
+    # ── POST-GAME: sheet-first, scrape only when needed ──────────────────────
+    spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"]) if not args.dry_run else None
+    bets        = []
+    leaderboard = []
+
+    if spreadsheet:
+        bets        = sheets.read_bets_for_game(spreadsheet, game_label)
+        leaderboard = sheets.read_leaderboard(spreadsheet)
+
+    # Determine if we need a fresh scrape:
+    # - No bets in sheet yet, OR
+    # - Bets exist but have no actual_result (game just ended, points not yet updated)
+    need_scrape = not bets or not any(b.get("actual_result") for b in bets)
+
+    if need_scrape:
+        log.info("▶ Scraping bets from Sport5 for: %s  [mode=%s]", game_label, args.mode)
+        bets, leaderboard = scraper.run(game_id, email, password)
+        log.info("  Scraped %d player bets", len(bets))
+    else:
+        log.info("▶ Read %d bets from sheet (no Sport5 call needed)", len(bets))
 
     # ── POST-GAME mode ──────────────────────────────────────────────────────
     log.info("▶ Analyzing results...")
@@ -146,10 +162,9 @@ def main():
 
     # Position movers vs previous game leaderboard
     position_movers = None
-    if not args.dry_run:
+    if spreadsheet:
         try:
-            spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"])
-            prev_board  = sheets.read_previous_leaderboard_snapshot(spreadsheet, game_label)
+            prev_board = sheets.read_previous_leaderboard_snapshot(spreadsheet, game_label)
             if prev_board:
                 position_movers = analyzer.leaderboard_position_changes(
                     analysis["leaderboard"], prev_board
@@ -167,8 +182,11 @@ def main():
             bonus_bets = sheets.read_bonus_bets(spreadsheet)
         except Exception as exc:
             log.warning("Could not load bonus bets: %s", exc)
-        log.info("▶ Writing to Google Sheets...")
-        sheets.write_all(analysis, game_label)
+        if need_scrape:
+            log.info("▶ Writing results to Google Sheets...")
+            sheets.write_all(analysis, game_label, spreadsheet=spreadsheet)
+        else:
+            log.info("▶ Sheet already up to date — skipping write")
         log.info("▶ Sending WhatsApp summary...")
         whatsapp.notify(analysis, game_label, what_if=what_if, position_movers=position_movers, bonus_bets=bonus_bets)
         log.info("✅ Done!")
