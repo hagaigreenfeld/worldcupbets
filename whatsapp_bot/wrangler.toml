@@ -1,18 +1,19 @@
-name            = "sport5-whatsapp-bot"
-main            = "worker.js"
+name               = "sport5-whatsapp-bot"
+main               = "worker.js"
 compatibility_date = "2024-01-01"
 
-# ── Secrets (set via CLI, NOT stored here) ─────────────────────────────────────
-# Run these commands once to set your secrets:
+# ── Plain vars (non-sensitive, baked in at deploy time) ────────────────────────
+[vars]
+GITHUB_REPO = "hagaigreenfeld/worldcupbets"
+TWILIO_FROM = "whatsapp:+14155238886"
+
+# ── Secrets (set ONCE in Cloudflare dashboard → Workers → your worker → Settings → Variables → add as Secret)
+# Secrets are encrypted and persist across deploys — you never need to re-enter them:
 #
-#   npx wrangler secret put TWILIO_ACCOUNT_SID
-#   npx wrangler secret put TWILIO_AUTH_TOKEN
-#   npx wrangler secret put TWILIO_FROM
-#   npx wrangler secret put WHATSAPP_GROUP_ID
-#   npx wrangler secret put SPORT5_EMAIL
-#   npx wrangler secret put SPORT5_PASSWORD
-#   npx wrangler secret put PUSH_SECRET
-#
-# TWILIO_FROM      → "whatsapp:+14155238886"  (Twilio sandbox number)
-# WHATSAPP_GROUP_ID → "whatsapp:+972XXXXXXXXX"  (your personal number to start;
-#                     for a group, use the group's participant list approach — see README)
+#   TWILIO_ACCOUNT_SID   your Twilio account SID
+#   TWILIO_AUTH_TOKEN    your Twilio auth token
+#   WHATSAPP_GROUP_ID    whatsapp:+972XXXXXXXXX
+#   SPORT5_EMAIL         hagaigreenfeld@gmail.com
+#   SPORT5_PASSWORD      your Sport5 password
+#   PUSH_SECRET          any random string
+#   GITHUB_TOKEN         GitHub PAT with workflow scope
