@@ -70,7 +70,11 @@ def main():
             try:
                 spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"])
                 bets = sheets.read_bets_for_game(spreadsheet, game_label)
-                if bets:
+                # Validate: if all bets have no score guess, data is corrupt — re-scrape
+                if bets and not any(b.get("score_guess") for b in bets):
+                    log.warning("Sheet bets have no score data — cache corrupt, re-scraping")
+                    bets = []
+                elif bets:
                     log.info("▶ Read %d bets from sheet (no Sport5 call needed)", len(bets))
             except Exception as exc:
                 log.warning("Could not read from sheet: %s — will scrape instead", exc)
