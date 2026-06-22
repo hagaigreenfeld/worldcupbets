@@ -81,6 +81,7 @@ def main():
         label    = next((f"{b['team1']} vs {b['team2']}" for b in bets if b.get("team1")), DEFAULT_GAME_LABEL)
         analysis = analyzer.analyze(bets, leaderboard)
         summary  = analysis["summary"]
+        summary["is_final"] = True  # post-game test always treats game as finished
 
         what_if = None
         if summary.get("actual_result") not in ("", "Not yet played"):
