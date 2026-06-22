@@ -1,0 +1,24 @@
+name: 🚀 Deploy WhatsApp Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "whatsapp_bot/**"
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: whatsapp_bot
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: whatsapp_bot
