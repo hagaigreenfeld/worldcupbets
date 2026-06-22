@@ -11,10 +11,20 @@ If game_id is omitted, uses the hardcoded DEFAULT_GAME_ID below.
 For midgame, score defaults to DEFAULT_MIDGAME_SCORE.
 """
 
-import os, sys, logging
+import os, sys, logging, unicodedata
 import scraper, whatsapp, analyzer, sheets
 
 logging.basicConfig(level=logging.WARNING)  # suppress INFO spam
+
+
+def _has_rtl(text: str) -> bool:
+    return any(unicodedata.bidirectional(c) in ("R", "AL", "AN") for c in text)
+
+
+def console_print(msg: str) -> None:
+    """Print Hebrew messages readably in a LTR terminal by reversing RTL lines."""
+    for line in msg.split("\n"):
+        print(line[::-1] if _has_rtl(line) else line)
 
 EMAIL    = os.environ.get("SPORT5_EMAIL",    "hagaigreenfeld@gmail.com")
 PASSWORD = os.environ.get("SPORT5_PASSWORD", "Worldcuphagai12++")
@@ -58,7 +68,7 @@ def main():
                 sheets.write_bets(sp, bets, DEFAULT_GAME_LABEL)
 
         label = next((f"{b['team1']} vs {b['team2']}" for b in bets if b.get("team1")), DEFAULT_GAME_LABEL)
-        print(whatsapp.format_kickoff_message(bets, label))
+        console_print(whatsapp.format_kickoff_message(bets, label))
 
     elif mode == "post-game":
         print(f"Scraping bets for {game_id}...")
@@ -71,7 +81,7 @@ def main():
             sheets.write_all(analysis, label)
         else:
             print("  (no sheet credentials — skipping Sheets write)")
-        print(whatsapp.format_game_summary(analysis, label))
+        console_print(whatsapp.format_game_summary(analysis, label))
 
     elif mode == "midgame":
         # Simulate תוצאות as if the game is still in progress
@@ -119,7 +129,7 @@ def main():
                 print(f"Could not load previous snapshot: {e}\n")
 
         print("=" * 60)
-        print(whatsapp.format_game_summary(
+        console_print(whatsapp.format_game_summary(
             analysis, label, what_if=what_if, position_movers=position_movers
         ))
 
