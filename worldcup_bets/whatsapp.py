@@ -43,73 +43,87 @@ def nickname(name: str) -> str:
 
 def format_game_summary(analysis: dict, game_label: str) -> str:
     """
-    Build a WhatsApp-friendly Hebrew summary message.
-    Uses *bold* (Twilio/WhatsApp markdown).
+    Build a WhatsApp-friendly Hebrew post-game summary.
     """
-    summary    = analysis.get("summary", {})
-    board      = analysis.get("leaderboard", [])
-    bets       = analysis.get("enriched_bets", [])
+    summary = analysis.get("summary", {})
+    board   = analysis.get("leaderboard", [])
 
-    game       = summary.get("game", game_label)
-    result     = summary.get("actual_result", "⏳ טרם הסתיים")
-    n_exact    = summary.get("total_exact", 0)
-    n_correct  = summary.get("total_correct", 0)
-    n_wrong    = summary.get("total_wrong", 0)
-    top_name   = summary.get("top_earner", "—")
-    top_pts    = summary.get("top_points", 0)
+    game   = summary.get("game", game_label)
+    result = summary.get("actual_result", "⏳ טרם הסתיים")
+    team1  = summary.get("team1", game.split(" vs ")[0] if " vs " in game else "קבוצה 1")
+    team2  = summary.get("team2", game.split(" vs ")[-1] if " vs " in game else "קבוצה 2")
 
-    # Who picked what
-    p1  = summary.get("picked_team1", [])
-    p2  = summary.get("picked_team2", [])
-    pdraw = summary.get("picked_draw", [])
-
-    # Teams
-    parts  = game.split(" vs ")
-    team1  = parts[0] if len(parts) > 0 else "קבוצה 1"
-    team2  = parts[1] if len(parts) > 1 else "קבוצה 2"
+    top_earners = [nickname(n) for n in summary.get("top_earners", [summary.get("top_earner", "—")])]
+    top_pts     = summary.get("top_points", 0)
+    n_exact     = summary.get("total_exact", 0)
+    n_correct   = summary.get("total_correct", 0)
+    n_wrong     = summary.get("total_wrong", 0)
+    no_bet      = [nickname(n) for n in summary.get("no_bet", [])]
 
     lines = [
         f"⚽ *{game}*",
-        f"📊 תוצאה: *{result}*",
+        f"📊 תוצאה סופית: *{result}*",
         "",
     ]
 
-    if result and result != "⏳ טרם הסתיים":
-        lines += [
-            f"🎯 ניחוש מדויק: *{n_exact}* שחקנים",
-            f"✅ כיוון נכון: *{n_correct}* שחקנים",
-            f"❌ טעו: *{n_wrong}* שחקנים",
-            "",
-        ]
-        if top_name != "—":
-            lines.append(f"🏆 הרוויח הכי הרבה: *{top_name}* ({top_pts} נק')")
-            lines.append("")
+    # Exact score winners
+    exact_by_score = summary.get("exact_by_score", {})
+    if exact_by_score:
+        lines.append("🎯 *ניחוש מדויק:*")
+        for score, players in exact_by_score.items():
+            names = ", ".join(nickname(p["name"]) for p in players)
+            pts   = players[0]["pts"]
+            lines.append(f"  *{score}* — {names} (+{pts} נק')")
+    else:
+        lines.append("🎯 אף אחד לא ניחש מדויק")
 
-    # Mini pick breakdown
-    if p1:
-        lines.append(f"🔵 בחרו *{team1}* ({len(p1)}): {', '.join(p1)}")
-    if p2:
-        lines.append(f"🔴 בחרו *{team2}* ({len(p2)}): {', '.join(p2)}")
-    if pdraw:
-        lines.append(f"⚪ בחרו *תיקו* ({len(pdraw)}): {', '.join(pdraw)}")
+    lines.append("")
 
-    lines += [
-        "",
-        "📋 *טבלה מעודכנת:*",
-    ]
+    # Correct direction
+    correct_by_winner = summary.get("correct_by_winner", {})
+    if correct_by_winner:
+        lines.append("✅ *כיוון נכון:*")
+        winner_label = {"team1": team1, "team2": team2, "draw": "תיקו"}
+        for outcome, players in correct_by_winner.items():
+            label = winner_label.get(outcome, outcome)
+            names = ", ".join(nickname(p["name"]) for p in players)
+            pts   = players[0]["pts"]
+            lines.append(f"  {label} — {names} (+{pts} נק')")
 
+    lines.append("")
+
+    # Wrong bets
+    wrong = [nickname(b["player_name"]) for b in analysis.get("enriched_bets", [])
+             if b.get("result_status", "").startswith("❌")]
+    if wrong:
+        lines.append(f"❌ *טעו:* {', '.join(wrong)}")
+        lines.append("")
+
+    # Top earners — only show when there were exact scores (interesting case)
+    # or when fewer than all correct-direction bettors (i.e. some got more)
+    total_correct_players = sum(len(v) for v in correct_by_winner.values())
+    if top_earners and top_earners[0] != "—" and (n_exact > 0 or len(top_earners) < total_correct_players):
+        earners_str = ", ".join(top_earners)
+        lines.append(f"🏆 *הרוויחו הכי הרבה:* {earners_str} ({top_pts} נק')")
+        lines.append("")
+
+    # No bet
+    if no_bet:
+        lines.append(f"😭 *הידעת ולא הימרת?!* {', '.join(no_bet)}")
+        lines.append("")
+
+    # Leaderboard
+    lines.append("📋 *טבלה מעודכנת:*")
     medals = ["🥇", "🥈", "🥉"]
     for r in board[:10]:
-        i     = r["rank"] - 1
-        medal = medals[i] if i < 3 else f"{r['rank']}."
-        delta = r.get("rank_delta", "")
+        i         = r["rank"] - 1
+        medal     = medals[i] if i < 3 else f"{r['rank']}."
+        delta     = r.get("rank_delta", "")
         delta_str = f" {delta}" if delta and delta != "—" else ""
         lines.append(f"{medal} {nickname(r['name'])} — {r['points']} נק'{delta_str}")
 
     if len(board) > 10:
         lines.append(f"...ועוד {len(board) - 10} שחקנים")
-
-    lines += ["", "🤖 שלח *עזרה* לפקודות נוספות"]
 
     return "\n".join(lines)
 

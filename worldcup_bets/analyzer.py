@@ -81,20 +81,44 @@ def game_summary(bets: list[dict]) -> dict:
         reverse=True,
     )
 
+    top_pts = pts_sorted[0]["points_won"] if pts_sorted else 0
+    top_earners = [b["player_name"] for b in pts_sorted if float(b.get("points_won", 0)) == float(top_pts)]
+
+    # Group exact scorers with their points
+    exact_bets = [b for b in bets if b.get("result_status", "").startswith("🎯")]
+    exact_by_score: dict[str, list] = {}
+    for b in exact_bets:
+        exact_by_score.setdefault(b.get("score_guess", ""), []).append(
+            {"name": b["player_name"], "pts": b.get("points_won", 0)}
+        )
+
+    # Group correct-direction bettors with their points
+    correct_bets = [b for b in bets if b.get("result_status", "").startswith("✅")]
+    correct_by_winner: dict[str, list] = {}
+    for b in correct_bets:
+        correct_by_winner.setdefault(b.get("guess_winner", ""), []).append(
+            {"name": b["player_name"], "pts": b.get("points_won", 0)}
+        )
+
     return {
-        "game":           f"{team1} vs {team2}",
-        "actual_result":  actual or "Not yet played",
-        "picked_team1":   picks["team1"],
-        "picked_team2":   picks["team2"],
-        "picked_draw":    picks["draw"],
-        "no_bet":         picks["N/A"],
-        "top_earner":     pts_sorted[0]["player_name"] if pts_sorted else "—",
-        "top_points":     pts_sorted[0]["points_won"]  if pts_sorted else 0,
-        "bottom_earner":  pts_sorted[-1]["player_name"] if pts_sorted else "—",
-        "bottom_points":  pts_sorted[-1]["points_won"] if pts_sorted else 0,
-        "total_exact":    sum(1 for b in bets if b.get("result_status", "").startswith("🎯")),
-        "total_correct":  sum(1 for b in bets if b.get("result_status", "").startswith("✅")),
-        "total_wrong":    sum(1 for b in bets if b.get("result_status", "").startswith("❌")),
+        "game":              f"{team1} vs {team2}",
+        "team1":             team1,
+        "team2":             team2,
+        "actual_result":     actual or "Not yet played",
+        "picked_team1":      picks["team1"],
+        "picked_team2":      picks["team2"],
+        "picked_draw":       picks["draw"],
+        "no_bet":            picks["N/A"],
+        "top_earners":       top_earners,
+        "top_points":        top_pts,
+        "top_earner":        top_earners[0] if top_earners else "—",  # kept for backwards compat
+        "bottom_earner":     pts_sorted[-1]["player_name"] if pts_sorted else "—",
+        "bottom_points":     pts_sorted[-1]["points_won"] if pts_sorted else 0,
+        "total_exact":       len(exact_bets),
+        "total_correct":     len(correct_bets),
+        "total_wrong":       sum(1 for b in bets if b.get("result_status", "").startswith("❌")),
+        "exact_by_score":    exact_by_score,
+        "correct_by_winner": correct_by_winner,
     }
 
 
