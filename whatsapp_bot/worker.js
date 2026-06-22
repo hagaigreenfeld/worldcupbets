@@ -16,40 +16,94 @@
  *   SPORT5_PASSWORD      - your Sport5 password
  *   PUSH_SECRET          - a secret token for the /push endpoint (any random string)
  *   GROUP_ID             - Sport5 group ID (6a202c81f6f70af684071fd4)
+ *   GITHUB_TOKEN         - Personal access token with actions:write scope
+ *   GITHUB_REPO          - "owner/repo" e.g. "hagaigreenfeld/worldcupbets"
  */
 
 const SPORT5_BASE = "https://hevre.sport5.co.il/server/data.php";
 const GROUP_ID    = "6a202c81f6f70af684071fd4";
 
+const NICKNAMES = {
+  "Nir mish":        "בבה",
+  "חיים אבירם":      "חיים",
+  "adam aviram":     "אדם הראשון",
+  "אלון גזית":       "גזה",
+  "asaf gazit":      "גזה ג׳וניור",
+  "חגי גרינפלד":     "חגי",
+  "אדם אבירם":       "אדם השני",
+  "מוטי דקל":        "מוטי",
+  "בני אוחיון":      "בני",
+  "אדיר":            "אדיר",
+  "Eran Gazit":      "אח של גזה",
+  "Avishay Shefer":  "אבישי",
+  "Reshef Elias":    "רשף",
+  "roi piro29":      "פירו",
+  "Rom Mishali":     "דוד ג׳וניור",
+  "סהר פירו":        "סהר פירו",
+  "Yoav Pais":       "יואב",
+  "יותם":            "יותם",
+  "Eran Sandel":     "סנדל",
+  "PIR0":            "פירו ג׳וניור",
+};
+
+function nickname(name) {
+  return NICKNAMES[name.trim()] || name;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function sport5Post(type, token, body = {}) {
-  const form = new URLSearchParams({ token, ...body });
-  const res  = await fetch(`${SPORT5_BASE}?type=${type}`, {
+  const url = `${SPORT5_BASE}?type=${type}`;
+  console.log(`[sport5Post] POST ${url}`);
+  const res  = await fetch(url, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body:    form.toString(),
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent":   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+      "Origin":       "https://hevre.sport5.co.il",
+      "Referer":      "https://hevre.sport5.co.il/",
+    },
+    body:    JSON.stringify({ token, ...body }),
   });
-  return res.json();
+  console.log(`[sport5Post] status=${res.status}`);
+  const text = await res.text();
+  console.log(`[sport5Post] body preview: ${text.substring(0, 300)}`);
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    console.error(`[sport5Post] Failed to parse JSON. Status: ${res.status}. Body preview: ${text.substring(0, 500)}`);
+    throw err;
+  }
 }
 
 async function login(env) {
-  const form = new URLSearchParams({
-    email:    env.SPORT5_EMAIL,
-    password: env.SPORT5_PASSWORD,
-  });
-  const res  = await fetch(`${SPORT5_BASE}?type=appUserLogin`, {
+  const url = `${SPORT5_BASE}?type=loginUser`;
+  console.log(`[login] POST ${url}`);
+  const res  = await fetch(url, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body:    form.toString(),
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent":   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+      "Origin":       "https://hevre.sport5.co.il",
+      "Referer":      "https://hevre.sport5.co.il/",
+    },
+    body:    JSON.stringify({ email: env.SPORT5_EMAIL, password: env.SPORT5_PASSWORD }),
   });
-  const data = await res.json();
-  if (!data.token) throw new Error("Login failed: " + JSON.stringify(data));
-  return data.token;
+  console.log(`[login] status=${res.status}`);
+  const text = await res.text();
+  try {
+    const data = JSON.parse(text);
+    if (!data.token) throw new Error("Login failed: " + JSON.stringify(data));
+    console.log(`[login] token obtained, keys in response: ${Object.keys(data).join(", ")}`);
+    return data.token;
+  } catch (err) {
+    console.error(`[login] Failed to parse JSON. Status: ${res.status}. Body preview: ${text.substring(0, 500)}`);
+    throw err;
+  }
 }
 
 async function getLeaderboard(token) {
-  const data = await sport5Post("getGroup", token, { groupId: GROUP_ID });
+  const data = await sport5Post("getGroup", token, { membersGroup: GROUP_ID });
   const members = data.members || [];
   return members
     .sort((a, b) => (b.points || 0) - (a.points || 0))
@@ -98,15 +152,18 @@ async function handleLeaderboard(env) {
   const medals = ["🥇", "🥈", "🥉"];
   const lines  = board.map((r, i) => {
     const medal = medals[i] || `${r.rank}.`;
-    return `${medal} ${r.name} — ${r.points} נק'`;
+    return `${medal} ${nickname(r.name)} - ${r.points}`;
   });
 
   return `⚽ *טבלת חבר'ה קדרון*\n\n${lines.join("\n")}\n\n🕐 עודכן עכשיו`;
 }
 
 async function handleHelp() {
-  return `🤖 *פקודות הבוט*\n
+  return `🤖 *פקודות הבוט*
+
 *טבלה* — טבלת הניקוד הנוכחית
+*ניחושים <game_id>* — שליפת ניחושים לפני משחק (מפעיל GitHub Actions)
+*תוצאות <game_id>* — סיכום ניקוד אחרי משחק
 *עזרה* — הצגת פקודות זמינות
 *סטטוס* — הבוט חי ומוכן ✅`;
 }
@@ -115,16 +172,81 @@ async function handleStatus() {
   return "✅ הבוט פעיל ומחכה למשחקים!";
 }
 
-// Normalize Hebrew commands (handle various spellings/shortcuts)
+/**
+ * Trigger GitHub Actions workflow_dispatch for kickoff or post-game mode.
+ * gameId and gameLabel come from the WhatsApp message.
+ */
+async function triggerWorkflow(env, gameId, gameLabel, runMode) {
+  const repo = env.GITHUB_REPO; // e.g. "hagaigreenfeld/worldcupbets"
+  const url  = `https://api.github.com/repos/${repo}/actions/workflows/worldcup.yml/dispatches`;
+
+  const res = await fetch(url, {
+    method:  "POST",
+    headers: {
+      Authorization:  `Bearer ${env.GITHUB_TOKEN}`,
+      "Content-Type": "application/json",
+      Accept:         "application/vnd.github+json",
+      "User-Agent":   "worldcupbets-bot",
+    },
+    body: JSON.stringify({
+      ref:    "main",
+      inputs: { game_id: gameId, game_label: gameLabel, run_mode: runMode },
+    }),
+  });
+
+  return res.status; // 204 = success
+}
+
+async function handleKickoff(env, gameId, gameLabel) {
+  if (!gameId) {
+    return '📋 שלח: *ניחושים <game_id> <label>*\nדוגמה: ניחושים abc123 "ארגנטינה vs ברזיל"';
+  }
+
+  const label = gameLabel || gameId;
+  const status = await triggerWorkflow(env, gameId, label, "kickoff");
+
+  if (status === 204) {
+    return `⚽ *${label}*\n🚀 שולף ניחושים... תקבל הודעה בעוד ~30 שניות`;
+  }
+  return `❌ שגיאה בהפעלת הניחושים (status ${status}). בדוק את GITHUB_TOKEN.`;
+}
+
+async function handlePostGame(env, gameId, gameLabel) {
+  if (!gameId) {
+    return '📋 שלח: *תוצאות <game_id> <label>*\nדוגמה: תוצאות abc123 "ארגנטינה vs ברזיל"';
+  }
+
+  const label = gameLabel || gameId;
+  const status = await triggerWorkflow(env, gameId, label, "post-game");
+
+  if (status === 204) {
+    return `⚽ *${label}*\n📊 מחשב תוצאות... תקבל סיכום בעוד ~60 שניות`;
+  }
+  return `❌ שגיאה (status ${status}). בדוק את GITHUB_TOKEN.`;
+}
+
+// Parse "ניחושים abc123 ארגנטינה vs ברזיל" → { cmd, gameId, gameLabel }
 function parseCommand(text) {
-  const t = (text || "").trim().toLowerCase();
-  if (["טבלה", "טבלת", "standings", "leaderboard", "דירוג", "תוצאות"].some(k => t.includes(k)))
-    return "leaderboard";
-  if (["עזרה", "help", "?", "פקודות"].some(k => t.includes(k)))
-    return "help";
-  if (["סטטוס", "status", "ping"].some(k => t.includes(k)))
-    return "status";
-  return null;
+  const t = (text || "").trim();
+
+  if (["טבלה", "טבלת", "standings", "leaderboard", "דירוג"].some(k => t.toLowerCase().includes(k)))
+    return { cmd: "leaderboard" };
+  if (["עזרה", "help", "?", "פקודות"].some(k => t.toLowerCase().includes(k)))
+    return { cmd: "help" };
+  if (["סטטוס", "status", "ping"].some(k => t.toLowerCase().includes(k)))
+    return { cmd: "status" };
+
+  // "ניחושים <game_id> [label...]"
+  const kickoffMatch = t.match(/^ניחושים\s+(\S+)(?:\s+(.+))?$/);
+  if (kickoffMatch)
+    return { cmd: "kickoff", gameId: kickoffMatch[1], gameLabel: kickoffMatch[2] || kickoffMatch[1] };
+
+  // "תוצאות <game_id> [label...]" — manually trigger post-game analysis
+  const postGameMatch = t.match(/^תוצאות\s+(\S+)(?:\s+(.+))?$/);
+  if (postGameMatch)
+    return { cmd: "post-game", gameId: postGameMatch[1], gameLabel: postGameMatch[2] || postGameMatch[1] };
+
+  return { cmd: null };
 }
 
 // ── Route handlers ────────────────────────────────────────────────────────────
@@ -138,17 +260,18 @@ async function handleWebhook(request, env) {
 
   console.log(`[webhook] from=${from} body="${msgBody}"`);
 
-  const cmd = parseCommand(msgBody);
+  const { cmd, gameId, gameLabel } = parseCommand(msgBody);
   if (!cmd) {
-    // Unknown command — silent ignore or friendly nudge
     return twimlReply('לא הבנתי 🤔 שלח *עזרה* לרשימת פקודות');
   }
 
   try {
     let reply;
-    if (cmd === "leaderboard") reply = await handleLeaderboard(env);
-    else if (cmd === "help")   reply = await handleHelp();
-    else if (cmd === "status") reply = await handleStatus();
+    if      (cmd === "leaderboard") reply = await handleLeaderboard(env);
+    else if (cmd === "help")        reply = await handleHelp();
+    else if (cmd === "status")      reply = await handleStatus();
+    else if (cmd === "kickoff")     reply = await handleKickoff(env, gameId, gameLabel);
+    else if (cmd === "post-game")   reply = await handlePostGame(env, gameId, gameLabel);
     else reply = "פקודה לא מוכרת.";
 
     return twimlReply(reply);
