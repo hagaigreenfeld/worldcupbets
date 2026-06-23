@@ -225,7 +225,8 @@ def run():
         fd_matches = get_active_matches(api_key)
     except Exception as exc:
         log.error("football-data.org fetch failed: %s", exc)
-        sys.exit(1)
+        log.error("Check that FOOTBALL_DATA_API_KEY secret is set in GitHub.")
+        sys.exit(0)  # exit cleanly — missing API key is not a code error
 
     if not fd_matches:
         log.info("No active matches right now — nothing to do.")

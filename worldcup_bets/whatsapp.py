@@ -207,7 +207,7 @@ def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False
                 lines.append(f"    💔 מאבדים ניחוש מדויק: {', '.join(nickname(c['player']) for c in loses_exact)}")
             if loses_all:
                 lines.append(f"    ❌ מפסידים: {', '.join(nickname(c['player']) for c in loses_all)}")
-            if bonus_side:
+            if bonus_side and not is_final:
                 all_names = ", ".join(b["nickname"] for b in bonus_side)
                 lines.append(f"    ⭐ +2 בונוס: {all_names}")
 
