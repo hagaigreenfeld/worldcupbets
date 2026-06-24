@@ -115,26 +115,45 @@ async function getLeaderboard(token) {
 // "Started" means beggining <= now. The timestamp field is "beggining" (Sport5 API typo).
 // Returns { gid, team1, team2, roundName, kickoff } or null.
 function resolveLatestGame(guesses) {
+  const all = listStartedGames(guesses);
+  return all.length ? all[0] : null;
+}
+
+// Returns all started games sorted by kickoff descending.
+function listStartedGames(guesses) {
   const now = Date.now();
-  let best = null;
+  const games = [];
 
   for (const round of guesses) {
     for (const g of round.games || []) {
       const ts = g.beggining;
-      if (!ts || ts > now) continue;   // skip future games
-      if (!best || ts > best.kickoff) {
-        best = {
-          gid:       g.gid,
-          team1:     g.team1?.name || "",
-          team2:     g.team2?.name || "",
-          roundName: round.name || "",
-          kickoff:   ts,
-        };
-      }
+      if (!ts || ts > now) continue;
+      games.push({
+        gid:       g.gid,
+        team1:     g.team1?.name || "",
+        team2:     g.team2?.name || "",
+        roundName: round.name || "",
+        kickoff:   ts,
+      });
     }
   }
 
-  return best;
+  games.sort((a, b) => b.kickoff - a.kickoff);
+  return games;
+}
+
+function gameLabel(game) {
+  if (game.team1 && game.team2)
+    return `${game.team1} vs ${game.team2}${game.roundName ? ` (${game.roundName})` : ""}`;
+  return game.gid;
+}
+
+function formatGamePicker(games, offset, total, cmdHebrew) {
+  const lines = games.map((g, i) => `${i + 1}. ${gameLabel(g)}`);
+  let msg = `⚽ *בחר משחק ל${cmdHebrew}:*\n\n${lines.join("\n")}`;
+  if (offset + games.length < total) msg += `\n\n_שלח *עוד* לעוד משחקים_`;
+  msg += `\n\n_שלח מספר לבחירה_`;
+  return msg;
 }
 
 async function sendWhatsApp(env, to, message) {
@@ -189,10 +208,12 @@ async function handleHelp() {
   return `🤖 *פקודות הבוט*
 
 *טבלה* — טבלת הניקוד הנוכחית
-*ניחושים* — שליפת ניחושים למשחק האחרון/הנוכחי
-*תוצאות* — סיכום ניקוד למשחק האחרון
+*ניחושים* — בחר משחק ושלוף ניחושים
+*תוצאות* — בחר משחק וקבל סיכום ניקוד
 *עזרה* — הצגת פקודות זמינות
-*סטטוס* — הבוט חי ומוכן ✅`;
+*סטטוס* — הבוט חי ומוכן ✅
+
+_לאחר שליחת ניחושים/תוצאות תוצג רשימת משחקים — שלח מספר לבחירה או *עוד* לעוד משחקים_`;
 }
 
 async function handleStatus() {
@@ -244,23 +265,86 @@ async function triggerWorkflow(env, gameId, gameLabel, runMode, sender = "") {
   return res.status;
 }
 
-async function resolveGame(env, gameId, gameLabel) {
-  if (gameId) return { gameId, gameLabel: gameLabel || gameId };
+async function resolveGame(env, gameId, gameLabelArg) {
+  if (gameId) return { gameId, gameLabel: gameLabelArg || gameId };
 
   const { guesses } = await login(env);
   const game = resolveLatestGame(guesses);
   if (!game) throw new Error("אין משחק שהתחיל עדיין");
 
-  const label = game.team1 && game.team2
-    ? `${game.team1} vs ${game.team2}${game.roundName ? ` (${game.roundName})` : ""}`
-    : game.gid;
-  return { gameId: game.gid, gameLabel: label };
+  return { gameId: game.gid, gameLabel: gameLabel(game) };
 }
 
-async function handleKickoff(env, gameId, gameLabel, sender) {
+const PICKER_PAGE_SIZE = 5;
+
+// Show game picker and store pending state in KV.
+async function showGamePicker(env, from, cmd, offset = 0) {
+  const { guesses } = await login(env);
+  const allGames = listStartedGames(guesses);
+  if (!allGames.length) return "❌ אין משחקים שהתחילו עדיין";
+
+  const page = allGames.slice(offset, offset + PICKER_PAGE_SIZE);
+  const cmdHebrew = cmd === "kickoff" ? "ניחושים" : "תוצאות";
+
+  if (env.DEDUP_KV) {
+    await env.DEDUP_KV.put(
+      `pending:${from}`,
+      JSON.stringify({ cmd, games: allGames, offset }),
+      { expirationTtl: 300 }
+    );
+  }
+
+  return formatGamePicker(page, offset, allGames.length, cmdHebrew);
+}
+
+async function handleSelection(env, selection, from) {
+  if (!env.DEDUP_KV) return "❌ KV לא מוגדר";
+
+  const raw = await env.DEDUP_KV.get(`pending:${from}`);
+  if (!raw) return "❓ לא נמצאה בחירה פעילה. שלח *ניחושים* או *תוצאות* להתחלה.";
+
+  const state = JSON.parse(raw);
+
+  if (selection === "עוד") {
+    const newOffset = state.offset + PICKER_PAGE_SIZE;
+    if (newOffset >= state.games.length) return "אין עוד משחקים.";
+    return showGamePickerFromState(env, from, state.cmd, state.games, newOffset);
+  }
+
+  const idx = parseInt(selection, 10) - 1;
+  const pageGames = state.games.slice(state.offset, state.offset + PICKER_PAGE_SIZE);
+  if (isNaN(idx) || idx < 0 || idx >= pageGames.length)
+    return `❌ בחירה לא תקינה. שלח מספר בין 1 ל-${pageGames.length}.`;
+
+  const chosen = pageGames[idx];
+  await env.DEDUP_KV.delete(`pending:${from}`);
+
+  if (state.cmd === "kickoff")  return handleKickoff(env, chosen.gid, gameLabel(chosen), from);
+  if (state.cmd === "post-game") return handlePostGame(env, chosen.gid, gameLabel(chosen), from);
+  return "❌ פקודה לא מוכרת בסטייט.";
+}
+
+async function showGamePickerFromState(env, from, cmd, allGames, offset) {
+  const page = allGames.slice(offset, offset + PICKER_PAGE_SIZE);
+  const cmdHebrew = cmd === "kickoff" ? "ניחושים" : "תוצאות";
+
+  if (env.DEDUP_KV) {
+    await env.DEDUP_KV.put(
+      `pending:${from}`,
+      JSON.stringify({ cmd, games: allGames, offset }),
+      { expirationTtl: 300 }
+    );
+  }
+
+  return formatGamePicker(page, offset, allGames.length, cmdHebrew);
+}
+
+async function handleKickoff(env, gameId, gameLabelArg, sender) {
+  if (!gameId) return showGamePicker(env, sender, "kickoff");
+
   let resolved;
   try {
-    resolved = await resolveGame(env, gameId, gameLabel);
+    resolved = await resolveGame(env, gameId, gameLabelArg);
   } catch (err) {
     return `❌ לא הצלחתי למצוא משחק: ${err.message}`;
   }
@@ -278,10 +362,12 @@ async function handleKickoff(env, gameId, gameLabel, sender) {
   return `⚽ *${resolved.gameLabel}*\n🚀 שולף ניחושים... תקבל הודעה בעוד ~30 שניות`;
 }
 
-async function handlePostGame(env, gameId, gameLabel, sender) {
+async function handlePostGame(env, gameId, gameLabelArg, sender) {
+  if (!gameId) return showGamePicker(env, sender, "post-game");
+
   let resolved;
   try {
-    resolved = await resolveGame(env, gameId, gameLabel);
+    resolved = await resolveGame(env, gameId, gameLabelArg);
   } catch (err) {
     return `❌ לא הצלחתי למצוא משחק: ${err.message}`;
   }
@@ -310,15 +396,19 @@ function parseCommand(text) {
   if (["סטטוס", "status", "ping"].some(k => t.toLowerCase().includes(k)))
     return { cmd: "status" };
 
-  // "ניחושים [game_id [label...]]" — game_id optional, defaults to latest game
+  // "ניחושים [game_id [label...]]" — game_id optional, defaults to picker
   const kickoffMatch = t.match(/^ניחושים(?:\s+(\S+)(?:\s+(.+))?)?$/);
   if (kickoffMatch)
     return { cmd: "kickoff", gameId: kickoffMatch[1] || null, gameLabel: kickoffMatch[2] || null };
 
-  // "תוצאות [game_id [label...]]" — game_id optional, defaults to latest game
+  // "תוצאות [game_id [label...]]" — game_id optional, defaults to picker
   const postGameMatch = t.match(/^תוצאות(?:\s+(\S+)(?:\s+(.+))?)?$/);
   if (postGameMatch)
     return { cmd: "post-game", gameId: postGameMatch[1] || null, gameLabel: postGameMatch[2] || null };
+
+  // Number selection (1-9) or "עוד" — used when a picker is active
+  if (/^[1-9]$/.test(t)) return { cmd: "selection", selection: t };
+  if (t === "עוד")        return { cmd: "selection", selection: "עוד" };
 
   return { cmd: null };
 }
@@ -334,7 +424,7 @@ async function handleWebhook(request, env) {
 
   console.log(`[webhook] from=${from} body="${msgBody}"`);
 
-  const { cmd, gameId, gameLabel } = parseCommand(msgBody);
+  const { cmd, gameId, gameLabel, selection } = parseCommand(msgBody);
   if (!cmd) {
     return twimlReply('לא הבנתי 🤔 שלח *עזרה* לרשימת פקודות');
   }
@@ -346,6 +436,7 @@ async function handleWebhook(request, env) {
     else if (cmd === "status")      reply = await handleStatus();
     else if (cmd === "kickoff")     reply = await handleKickoff(env, gameId, gameLabel, from);
     else if (cmd === "post-game")   reply = await handlePostGame(env, gameId, gameLabel, from);
+    else if (cmd === "selection")   reply = await handleSelection(env, selection, from);
     else reply = "פקודה לא מוכרת.";
 
     return twimlReply(reply);
