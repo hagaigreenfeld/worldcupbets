@@ -131,13 +131,19 @@ def main():
     summary = analysis["summary"]
 
     # Check live match status from football-data.org
-    team1     = summary.get("team1", "")
-    team2     = summary.get("team2", "")
-    fd_status = os.environ.get("GAME_STATUS") or sched.check_game_status(
-        team1, team2, api_key=os.environ.get("FOOTBALL_DATA_API_KEY")
-    )
-    log.info("Match status: %s", fd_status or "unknown")
-    summary["is_final"] = (fd_status == "FINISHED")
+    # GAME_STATUS env var overrides (set by scheduler or manual trigger).
+    # football-data.org uses English team names; Sport5 uses Hebrew — fuzzy match
+    # rarely succeeds here, so treat unknown status as FINISHED in post-game mode
+    # (manual post-game is only triggered after the game is done).
+    fd_status = os.environ.get("GAME_STATUS", "")
+    if not fd_status:
+        team1 = summary.get("team1", "")
+        team2 = summary.get("team2", "")
+        fd_status = sched.check_game_status(
+            team1, team2, api_key=os.environ.get("FOOTBALL_DATA_API_KEY")
+        )
+    log.info("Match status: %s", fd_status or "unknown — defaulting to FINISHED for post-game")
+    summary["is_final"] = (fd_status == "FINISHED") if fd_status else True
 
     log.info("  Game:    %s", summary.get("game", "?"))
     log.info("  Result:  %s", summary.get("actual_result", "Pending"))

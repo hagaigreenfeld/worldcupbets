@@ -66,6 +66,10 @@ def get_active_matches(api_key: Optional[str] = None) -> list[dict]:
     out = []
 
     for m in resp.json().get("matches", []):
+        # Skip TBD knockout matches where teams aren't decided yet
+        if not (m.get("homeTeam") or {}).get("name") or not (m.get("awayTeam") or {}).get("name"):
+            continue
+
         status = m["status"]
         utc    = datetime.fromisoformat(m["utcDate"].replace("Z", "+00:00"))
         age    = (now - utc).total_seconds() / 60   # minutes since scheduled kickoff
@@ -75,7 +79,6 @@ def get_active_matches(api_key: Optional[str] = None) -> list[dict]:
         elif status == "FINISHED" and age < POSTGAME_WINDOW_MINUTES:
             out.append(_fd_row(m, utc))
         elif status in ("SCHEDULED", "TIMED") and -5 <= age <= KICKOFF_WINDOW_MINUTES:
-            # Game should have started already (or is about to) — treat as kickoff candidate
             out.append(_fd_row(m, utc))
 
     log.info("Active/recent matches from football-data.org: %d", len(out))
@@ -83,13 +86,13 @@ def get_active_matches(api_key: Optional[str] = None) -> list[dict]:
 
 
 def _fd_row(m: dict, utc: datetime) -> dict:
-    score = m.get("score", {})
-    ft    = score.get("fullTime", {})
-    ht    = score.get("halfTime", {})
+    score = m.get("score") or {}
+    ft    = score.get("fullTime") or {}
+    ht    = score.get("halfTime") or {}
     return {
         "fd_id":    m["id"],
-        "home":     m["homeTeam"]["name"],
-        "away":     m["awayTeam"]["name"],
+        "home":     (m.get("homeTeam") or {}).get("name") or "",
+        "away":     (m.get("awayTeam") or {}).get("name") or "",
         "utc":      utc,
         "status":   m["status"],
         "score_ft": f"{ft.get('home',0)}:{ft.get('away',0)}" if ft.get("home") is not None else "",
@@ -122,6 +125,8 @@ def get_sport5_games(token: str) -> list[dict]:
 
 
 def fuzzy_match(a: str, b: str) -> bool:
+    if not a or not b:
+        return False
     a, b = a.lower().strip(), b.lower().strip()
     return a in b or b in a or (len(a) >= 5 and a[:5] == b[:5])
 
@@ -155,8 +160,10 @@ def check_game_status(team1: str, team2: str, api_key: Optional[str] = None) -> 
         return ""
 
     for m in matches:
-        home = m["homeTeam"]["name"]
-        away = m["awayTeam"]["name"]
+        home = (m.get("homeTeam") or {}).get("name") or ""
+        away = (m.get("awayTeam") or {}).get("name") or ""
+        if not home or not away:
+            continue
         if (fuzzy_match(team1, home) or fuzzy_match(team1, away)) and \
            (fuzzy_match(team2, home) or fuzzy_match(team2, away)):
             status = m["status"]
@@ -290,7 +297,7 @@ def run():
                 bets, leaderboard = scraper.run(gid, email, password)
                 analysis          = analyzer.analyze(bets, leaderboard)
                 analysis["summary"]["is_final"] = True  # scheduler only fires post-game on FINISHED
-                sheets.write_all(analysis, game_label, sheet_id)
+                sheets.write_all(analysis, game_label, spreadsheet=spreadsheet)
 
                 what_if = None
                 summary_s = analysis["summary"]
