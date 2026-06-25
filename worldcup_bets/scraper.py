@@ -154,8 +154,14 @@ def extract_bets_for_game(member: dict, rounds: list, game_id: str) -> Optional[
                 r1, r2 = game.get("result1"), game.get("result2")
                 actual_result = f"{r1}:{r2}" if r1 is not None and r2 is not None else ""
 
-                # Potential points: ratio for guessed direction × bonusExact (exact score)
-                pot = _calc_potential(game, guess_winner)
+                game_finished = r1 is not None and r2 is not None
+                points_won    = game.get("gamepoints", 0) or 0
+
+                # For finished games use actual points; for live/upcoming use Sport5 projection.
+                if game_finished:
+                    pot = float(points_won)
+                else:
+                    pot = _calc_potential(game, guess_winner)
 
                 return {
                     "player_name":      name,
@@ -165,7 +171,7 @@ def extract_bets_for_game(member: dict, rounds: list, game_id: str) -> Optional[
                     "guess_winner":     guess_winner,
                     "score_guess":      score_guess,
                     "actual_result":    actual_result,
-                    "points_won":       game.get("gamepoints", 0) or 0,
+                    "points_won":       points_won,
                     "potential_points": pot,
                     "round_name":       round_.get("name", ""),
                 }
@@ -174,20 +180,23 @@ def extract_bets_for_game(member: dict, rounds: list, game_id: str) -> Optional[
 
 def _calc_potential(game: dict, guess_winner: str) -> float:
     """
-    Potential points for an exact-score guess:
-      ratio (direction multiplier) × pointsMultplyer × bonusExact
-    ratio1/ratio2/ratio3 are direct multipliers (e.g. 2.0, 5.5, 3.5).
+    Projected ניקוד צפוי for a live/upcoming game.
+    Mirrors Sport5 logic: ratio × mult × bonusExact only for exact guesses,
+    ratio × mult for direction-only, 0 if no valid guess yet.
     """
+    tog = game.get("typeOfGuess", "")
+    if not guess_winner or tog == "nothingyet" or not tog:
+        return 0
     try:
         ratio_map = {
             "team1": game.get("ratio1", 0),
             "draw":  game.get("ratio2", 0),
             "team2": game.get("ratio3", 0),
         }
-        ratio  = ratio_map.get(guess_winner, 0) or 0
-        fd     = game.get("fixturedata", {})
-        mult   = fd.get("pointsMultplyer", 1) or 1
-        bonus  = fd.get("bonusExact", 4) or 4
+        ratio = ratio_map.get(guess_winner, 0) or 0
+        fd    = game.get("fixturedata", {})
+        mult  = fd.get("pointsMultplyer", 1) or 1
+        bonus = fd.get("bonusExact", 4) if tog == "exact" else 1
         return round(ratio * mult * bonus, 1)
     except Exception:
         return 0
