@@ -3,6 +3,10 @@ name: 🔭 Coming Up Next
 on:
   workflow_dispatch:
     inputs:
+      num_games:
+        description: "Number of upcoming games to include (leave blank for 1)"
+        required: false
+        default: ""
       dry_run:
         description: "Dry run (print message only, no sheet write or WhatsApp)"
         required: false
@@ -50,4 +54,8 @@ jobs:
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             DRY_FLAG="--dry-run"
           fi
-          python3 main.py --mode coming-up $DRY_FLAG
+          NUM_FLAG=""
+          if [ -n "${{ github.event.inputs.num_games }}" ]; then
+            NUM_FLAG="--num-games ${{ github.event.inputs.num_games }}"
+          fi
+          python3 main.py --mode coming-up $DRY_FLAG $NUM_FLAG

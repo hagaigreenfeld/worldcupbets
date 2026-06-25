@@ -46,6 +46,12 @@ def main():
         help="'kickoff' = pre-game bet cluster message; 'post-game' = full results + sheets",
     )
     parser.add_argument(
+        "--num-games",
+        type=int,
+        default=int(os.environ.get("NUM_GAMES", "0")) or None,
+        help="For coming-up mode: number of upcoming games to show (default 1)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print results to stdout, skip writing to Sheets / WhatsApp",
@@ -64,7 +70,7 @@ def main():
 
     # ── COMING-UP mode ──────────────────────────────────────────────────────
     if args.mode == "coming-up":
-        NEXT_N_GAMES = 4
+        NEXT_N_GAMES = args.num_games or 1
 
         log.info("▶ Logging in to Sport5...")
         token = scraper.get_token(email, password)
