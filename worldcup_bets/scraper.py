@@ -262,6 +262,101 @@ def run(game_id: str, email: str, password: str) -> tuple[list[dict], list[dict]
     return bets, board
 
 
+def get_upcoming_games_with_odds(token: str, n: int = 999) -> list[dict]:
+    """
+    Return unplayed games sorted by kickoff time (earliest first).
+    Each item includes team names, ratios, max potential points, and kickoff timestamp.
+    n=999 means all remaining games; pass a smaller number to cap.
+    """
+    group   = api_post("getGroup", token, membersGroup=GROUP_ID)
+    members = group.get("members", [])
+    if not members:
+        raise RuntimeError("No group members found")
+
+    first_uid = members[0].get("_id", "")
+    rounds    = get_friend_guesses(token, first_uid)
+
+    upcoming = []
+    for round_ in rounds:
+        round_name = round_.get("name", "")
+        for g in round_.get("games", []):
+            r1, r2 = g.get("result1"), g.get("result2")
+            if r1 is not None and str(r1) != "":
+                continue  # already played
+
+            gid   = g.get("gid", "")
+            team1 = (g.get("team1") or {}).get("name", "")
+            team2 = (g.get("team2") or {}).get("name", "")
+            if not gid or not team1 or not team2:
+                continue
+
+            fd          = g.get("fixturedata") or {}
+            mult        = float(fd.get("pointsMultplyer", 1) or 1)
+            bonus_exact = float(fd.get("bonusExact", 4) or 4)
+            ratio1      = float(g.get("ratio1", 0) or 0)
+            ratio2      = float(g.get("ratio2", 0) or 0)
+            ratio3      = float(g.get("ratio3", 0) or 0)
+            kickoff_ts  = g.get("beggining", 0) or 0
+
+            upcoming.append({
+                "gid":          gid,
+                "team1":        team1,
+                "team2":        team2,
+                "round_name":   round_name,
+                "ratio1":       ratio1,
+                "ratio2":       ratio2,
+                "ratio3":       ratio3,
+                "mult":         mult,
+                "bonus_exact":  bonus_exact,
+                "max_pts_team1": round(ratio1 * mult * bonus_exact, 1),
+                "max_pts_draw":  round(ratio2 * mult * bonus_exact, 1),
+                "max_pts_team2": round(ratio3 * mult * bonus_exact, 1),
+                "kickoff_ts":   kickoff_ts,
+            })
+
+    upcoming.sort(key=lambda g: g["kickoff_ts"] or float("inf"))
+    log.info("Upcoming games: %d total, returning up to %d", len(upcoming), n)
+    return upcoming[:n]
+
+
+def scrape_all_players_upcoming(token: str, game_gids: list[str]) -> dict[str, list[dict]]:
+    """
+    For multiple upcoming game IDs, return all players' current bets.
+    Fetches each player's rounds once (efficient) and extracts bets for all games.
+    Returns { gid: [bet_rows] }.
+    """
+    members = get_group_members(token)
+    result  = {gid: [] for gid in game_gids}
+
+    for member in members:
+        uid  = member.get("_id", "")
+        name = member.get("name", "?")
+        log.info("  → Fetching upcoming bets for %s", name)
+
+        try:
+            rounds = get_friend_guesses(token, uid)
+            for gid in game_gids:
+                row = extract_bets_for_game(member, rounds, gid)
+                result[gid].append(row if row else {
+                    "player_name":      name,
+                    "user_id":          uid,
+                    "team1":            "",
+                    "team2":            "",
+                    "guess_winner":     "",
+                    "score_guess":      "",
+                    "actual_result":    "",
+                    "points_won":       0,
+                    "potential_points": 0,
+                    "round_name":       "",
+                })
+        except Exception as exc:
+            log.error("    Error fetching for %s: %s", name, exc)
+
+        time.sleep(0.3)
+
+    return result
+
+
 if __name__ == "__main__":
     # Quick local test (set env vars before running)
     import sys

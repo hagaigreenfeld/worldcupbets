@@ -383,6 +383,92 @@ def notify(analysis: dict, game_label: str, what_if: dict = None, position_mover
     push_to_whatsapp(msg)
 
 
+_OUTCOME_NAME = {
+    "team1": lambda t1, t2: t1,
+    "draw":  lambda t1, t2: "תיקו",
+    "team2": lambda t1, t2: t2,
+}
+
+
+def format_coming_up_message(game_analyses: list[dict]) -> str:
+    """
+    'Coming up next' message: next 2-4 games with odds, max points per outcome,
+    and who can jump spots if the underdog wins.
+    """
+    lines = ["🔭 *המשחקים הבאים*", ""]
+
+    for game in game_analyses:
+        team1  = game["team1"]
+        team2  = game["team2"]
+        label  = game["label"]
+        r1     = game["ratio1"]
+        r2     = game["ratio2"]
+        r3     = game["ratio3"]
+        p1     = int(game["max_pts_team1"])
+        pd     = int(game["max_pts_draw"])
+        p2     = int(game["max_pts_team2"])
+        upset  = game["upset_outcome"]
+        ks     = game.get("kickoff_str", "")
+
+        lines.append("━━━━━━━━━━━━━━━━")
+        lines.append(f"⚽ *{label}*")
+        if ks:
+            lines.append(f"🕐 {ks} UTC")
+        lines.append("")
+
+        # Odds table — mark upset with 💥
+        def odds_line(outcome, ratio, pts, team_lbl):
+            marker = " 💥" if outcome == upset else ""
+            return f"  {team_lbl}: ×{ratio:.1f} → עד *{pts} נק'*{marker}"
+
+        lines.append("💰 *תגמול מקסימלי לניחוש מדויק:*")
+        lines.append(odds_line("team1", r1, p1, f"נצחון {team1}"))
+        lines.append(odds_line("draw",  r2, pd, "תיקו"))
+        lines.append(odds_line("team2", r3, p2, f"נצחון {team2}"))
+
+        # Overtake opportunities
+        opps = game.get("overtake_opps", [])
+        if opps:
+            lines.append("")
+            lines.append("🚀 *פוטנציאל לשינוי טבלה:*")
+            for opp in opps[:6]:
+                player      = nickname(opp["player"])
+                rank        = opp["current_rank"]
+                above       = nickname(opp["above_player"])
+                gap         = opp["gap_to_above"]
+                new_rank    = opp["would_reach_rank"]
+                places      = opp["places_gained"]
+                upset_pts   = opp["upset_max_pts"]
+                upset_name  = _OUTCOME_NAME[opp["upset_outcome"]](team1, team2)
+
+                # Bet status tag
+                if opp["on_upset"]:
+                    bet_tag = " ✅ כבר הימר!"
+                elif opp["has_bet"]:
+                    guess_name = _OUTCOME_NAME.get(opp["their_guess"], lambda a, b: opp["their_guess"])(team1, team2)
+                    bet_tag = f" (הימר {guess_name})"
+                else:
+                    bet_tag = " ⏰ טרם הימר"
+
+                jump_str = f"מקום *{new_rank}*" if places > 1 else f"עולה על *{above}*"
+                lines.append(
+                    f"  *{player}* (מקום {rank}, פער {gap:.0f} נק')"
+                    f" → הפתעת {upset_name} = +{upset_pts:.0f} נק' → {jump_str}! 🔥{bet_tag}"
+                )
+
+        lines.append("")
+
+    lines.append("🍿 *בהצלחה לכולם!*")
+    return "\n".join(lines)
+
+
+def notify_coming_up(game_analyses: list[dict]) -> None:
+    """Send the coming-up-next WhatsApp message."""
+    msg = format_coming_up_message(game_analyses)
+    log.info("Coming-up WhatsApp message preview:\n%s", msg)
+    push_to_whatsapp(msg)
+
+
 def notify_kickoff(bets: list[dict], game_label: str, bonus_bets: list = None) -> None:
     """Send pre-game kickoff cluster message."""
     msg = format_kickoff_message(bets, game_label, bonus_bets=bonus_bets)

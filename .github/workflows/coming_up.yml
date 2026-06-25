@@ -1,0 +1,53 @@
+name: 🔭 Coming Up Next
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (print message only, no sheet write or WhatsApp)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+  # Run every morning at 08:00 UTC on tournament days
+  schedule:
+    - cron: "0 8 * * *"
+
+env:
+  SPORT5_EMAIL:           ${{ secrets.SPORT5_EMAIL }}
+  SPORT5_PASSWORD:        ${{ secrets.SPORT5_PASSWORD }}
+  GOOGLE_SHEETS_KEY_JSON: ${{ secrets.GOOGLE_SHEETS_KEY_JSON }}
+  GOOGLE_SHEET_ID:        ${{ secrets.GOOGLE_SHEET_ID }}
+  WORKER_URL:             ${{ secrets.WORKER_URL }}
+  PUSH_SECRET:            ${{ secrets.PUSH_SECRET }}
+
+jobs:
+  coming-up:
+    name: Send coming-up-next message
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run coming-up
+        working-directory: worldcup_bets
+        run: |
+          DRY_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            DRY_FLAG="--dry-run"
+          fi
+          python3 main.py --mode coming-up $DRY_FLAG

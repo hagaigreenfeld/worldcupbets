@@ -237,6 +237,144 @@ def leaderboard_position_changes(
     return sorted(rows, key=lambda x: abs(x["rank_change"]), reverse=True)
 
 
+def coming_up_analysis(
+    upcoming_games: list[dict],
+    bets_per_game: dict[str, list[dict]],
+    leaderboard: list[dict],
+) -> list[dict]:
+    """
+    For each of the next few games, compute:
+      - Max points per outcome (win team1 / draw / win team2)
+      - Which outcome is the "upset" (highest ratio, least likely, most rewarding)
+      - Who can overtake someone above them if the upset happens
+      - Whether they've already bet on the upset or not yet
+
+    upcoming_games : from scraper.get_upcoming_games_with_odds()
+    bets_per_game  : { gid: [bet_rows] } from scraper.scrape_all_players_upcoming()
+    leaderboard    : [{ rank, name, points }]
+    """
+    lb_sorted = sorted(leaderboard, key=lambda r: r["rank"])
+    lb_map    = {r["name"]: r for r in lb_sorted}
+
+    results = []
+
+    for game in upcoming_games:
+        ratio1 = float(game.get("ratio1", 0) or 0)
+        ratio2 = float(game.get("ratio2", 0) or 0)
+        ratio3 = float(game.get("ratio3", 0) or 0)
+        p1     = float(game.get("max_pts_team1", 0) or 0)
+        pd     = float(game.get("max_pts_draw", 0) or 0)
+        p2     = float(game.get("max_pts_team2", 0) or 0)
+
+        team1 = game.get("team1", "")
+        team2 = game.get("team2", "")
+
+        outcome_pts = {"team1": p1, "draw": pd, "team2": p2}
+        upset_outcome    = max(outcome_pts, key=outcome_pts.get)
+        favorite_outcome = min(outcome_pts, key=outcome_pts.get)
+        upset_max_pts    = outcome_pts[upset_outcome]
+
+        gid  = game.get("gid", "")
+        bets = bets_per_game.get(gid, [])
+
+        # Map player name → their bet for this game
+        bets_map = {b["player_name"]: b for b in bets if b.get("player_name")}
+
+        overtake_opps = []
+
+        for lb_entry in lb_sorted:
+            name   = lb_entry["name"]
+            rank   = lb_entry["rank"]
+            points = float(lb_entry.get("points", 0))
+
+            if rank == 1:
+                continue
+
+            # Person directly above
+            above = next((r for r in lb_sorted if r["rank"] == rank - 1), None)
+            if not above:
+                continue
+
+            gap_to_above = float(above.get("points", 0)) - points
+
+            # How far could they jump with upset_max_pts?
+            new_pts       = points + upset_max_pts
+            would_reach_rank = sum(1 for r in lb_sorted if float(r.get("points", 0)) > new_pts) + 1
+            places_gained = rank - would_reach_rank
+
+            if places_gained <= 0:
+                continue  # upset doesn't help this player
+
+            # What has the player actually bet?
+            bet         = bets_map.get(name, {})
+            their_guess = (bet.get("guess_winner") or "").strip()
+            their_score = (bet.get("score_guess") or "").strip()
+            has_bet     = bool(their_guess and their_guess not in ("N/A", ""))
+            on_upset    = has_bet and (their_guess == upset_outcome)
+
+            # Direction points (no exact bonus): ratio × mult (for context)
+            their_pot   = float(bet.get("potential_points", 0) or 0)
+
+            overtake_opps.append({
+                "player":           name,
+                "current_rank":     rank,
+                "current_points":   points,
+                "above_player":     above["name"],
+                "above_rank":       above["rank"],
+                "above_points":     float(above.get("points", 0)),
+                "gap_to_above":     gap_to_above,
+                "has_bet":          has_bet,
+                "their_guess":      their_guess,
+                "their_score":      their_score,
+                "their_max_pts":    their_pot,
+                "on_upset":         on_upset,
+                "upset_outcome":    upset_outcome,
+                "upset_max_pts":    upset_max_pts,
+                "would_reach_rank": would_reach_rank,
+                "places_gained":    places_gained,
+            })
+
+        # Sort by most dramatic jump (most places gained first)
+        overtake_opps.sort(key=lambda x: (-x["places_gained"], x["current_rank"]))
+
+        round_name = game.get("round_name", "")
+        label      = f"{team1} vs {team2}"
+        if round_name:
+            label += f" ({round_name})"
+
+        kickoff_ts = game.get("kickoff_ts", 0)
+        try:
+            from datetime import datetime, timezone
+            kickoff_str = (
+                datetime.fromtimestamp(int(kickoff_ts) / 1000, tz=timezone.utc).strftime("%d/%m %H:%M")
+                if kickoff_ts else ""
+            )
+        except Exception:
+            kickoff_str = ""
+
+        results.append({
+            "gid":              gid,
+            "label":            label,
+            "team1":            team1,
+            "team2":            team2,
+            "round_name":       round_name,
+            "ratio1":           ratio1,
+            "ratio2":           ratio2,
+            "ratio3":           ratio3,
+            "max_pts_team1":    p1,
+            "max_pts_draw":     pd,
+            "max_pts_team2":    p2,
+            "upset_outcome":    upset_outcome,
+            "upset_max_pts":    upset_max_pts,
+            "favorite_outcome": favorite_outcome,
+            "kickoff_ts":       kickoff_ts,
+            "kickoff_str":      kickoff_str,
+            "overtake_opps":    overtake_opps,
+        })
+
+    return results
+
+
 def analyze(bets: list[dict], leaderboard: list[dict]) -> dict:
     """
     Full analysis bundle returned to sheets writer.

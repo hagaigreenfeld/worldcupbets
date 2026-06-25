@@ -408,6 +408,54 @@ def write_game_summary(
     log.info("Game Summary tab updated for %s", game_label)
 
 
+UPCOMING_GAMES_HEADERS = [
+    "Game Label", "Round", "Team 1", "Team 2",
+    "Win Team1 Max Pts", "Draw Max Pts", "Win Team2 Max Pts",
+    "Ratio Team1", "Ratio Draw", "Ratio Team2",
+    "Kickoff (UTC)", "Updated At",
+]
+
+
+def write_upcoming_games(spreadsheet: gspread.Spreadsheet, games: list[dict]) -> None:
+    """Overwrite the Upcoming Games tab with the full remaining schedule + odds."""
+    ws  = ensure_tab(spreadsheet, "Upcoming Games")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    rows = [UPCOMING_GAMES_HEADERS]
+    for g in games:
+        ts = g.get("kickoff_ts", 0)
+        try:
+            kickoff_str = (
+                datetime.fromtimestamp(int(ts) / 1000, tz=timezone.utc).strftime("%d/%m %H:%M")
+                if ts else ""
+            )
+        except Exception:
+            kickoff_str = str(ts)
+
+        label = f"{g['team1']} vs {g['team2']}"
+        if g.get("round_name"):
+            label += f" ({g['round_name']})"
+
+        rows.append([
+            label,
+            g.get("round_name", ""),
+            g.get("team1", ""),
+            g.get("team2", ""),
+            g.get("max_pts_team1", ""),
+            g.get("max_pts_draw", ""),
+            g.get("max_pts_team2", ""),
+            g.get("ratio1", ""),
+            g.get("ratio2", ""),
+            g.get("ratio3", ""),
+            kickoff_str,
+            now,
+        ])
+
+    ws.clear()
+    ws.update(rows, value_input_option="USER_ENTERED")
+    log.info("Upcoming Games tab updated (%d games)", len(games))
+
+
 # ── Main entry ─────────────────────────────────────────────────────────────────
 
 def write_all(

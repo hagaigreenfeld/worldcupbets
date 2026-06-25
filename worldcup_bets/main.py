@@ -41,7 +41,7 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["kickoff", "post-game"],
+        choices=["kickoff", "post-game", "coming-up"],
         default=os.environ.get("RUN_MODE", "post-game"),
         help="'kickoff' = pre-game bet cluster message; 'post-game' = full results + sheets",
     )
@@ -55,12 +55,54 @@ def main():
     game_id    = args.game_id
     game_label = args.game_label or game_id
 
-    if not game_id:
+    if not game_id and args.mode != "coming-up":
         log.error("No --game-id provided and GAME_ID env var not set.")
         sys.exit(1)
 
     email    = os.environ["SPORT5_EMAIL"]
     password = os.environ["SPORT5_PASSWORD"]
+
+    # ── COMING-UP mode ──────────────────────────────────────────────────────
+    if args.mode == "coming-up":
+        NEXT_N_GAMES = 4
+
+        log.info("▶ Logging in to Sport5...")
+        token = scraper.get_token(email, password)
+
+        log.info("▶ Fetching upcoming games schedule...")
+        all_upcoming  = scraper.get_upcoming_games_with_odds(token, n=999)
+        next_few      = all_upcoming[:NEXT_N_GAMES]
+
+        if not all_upcoming:
+            log.info("No upcoming games found — nothing to do.")
+            return
+
+        spreadsheet = None
+        leaderboard = []
+        if not args.dry_run:
+            spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"])
+            leaderboard = sheets.read_leaderboard(spreadsheet)
+
+        # Scrape all players' current bets for the next few games
+        next_gids = [g["gid"] for g in next_few]
+        log.info("▶ Scraping player bets for %d upcoming games...", len(next_few))
+        bets_per_game = scraper.scrape_all_players_upcoming(token, next_gids)
+
+        # Write full schedule to sheet
+        if not args.dry_run:
+            log.info("▶ Writing upcoming games to sheet (%d games)...", len(all_upcoming))
+            sheets.write_upcoming_games(spreadsheet, all_upcoming)
+
+        # Analyze next few games
+        game_analyses = analyzer.coming_up_analysis(next_few, bets_per_game, leaderboard)
+
+        if args.dry_run:
+            print(whatsapp.format_coming_up_message(game_analyses))
+        else:
+            log.info("▶ Sending coming-up WhatsApp message...")
+            whatsapp.notify_coming_up(game_analyses)
+            log.info("✅ Coming-up done!")
+        return
 
     # ── KICKOFF mode ────────────────────────────────────────────────────────
     if args.mode == "kickoff":
