@@ -463,10 +463,17 @@ def format_coming_up_message(game_analyses: list[dict]) -> str:
 
 
 def notify_coming_up(game_analyses: list[dict]) -> None:
-    """Send the coming-up-next WhatsApp message."""
-    msg = format_coming_up_message(game_analyses)
-    log.info("Coming-up WhatsApp message preview:\n%s", msg)
-    push_to_whatsapp(msg)
+    """Send coming-up-next — one WhatsApp message per game to stay under the 1600-char limit."""
+    header = "🔭 *המשחקים הבאים*\n"
+    for i, game in enumerate(game_analyses):
+        msg = format_coming_up_message([game])
+        if i == 0:
+            msg = header + "\n" + msg
+        log.info("Coming-up message %d/%d preview:\n%s", i + 1, len(game_analyses), msg)
+        push_to_whatsapp(msg)
+        if i < len(game_analyses) - 1:
+            import time as _time
+            _time.sleep(1)
 
 
 def notify_kickoff(bets: list[dict], game_label: str, bonus_bets: list = None) -> None:

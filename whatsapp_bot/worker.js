@@ -468,8 +468,16 @@ async function handlePush(request, env) {
 
   // Send to specified `to`, or fall back to the configured group number
   const to = payload.to || env.WHATSAPP_GROUP_ID;
-  const result = await sendWhatsApp(env, to, message);
-  return new Response(JSON.stringify(result), {
+  const twilioRes = await sendWhatsApp(env, to, message);
+  const sid    = twilioRes.sid || "(no sid)";
+  const status = twilioRes.status || twilioRes.error_message || "(unknown)";
+  const msgLen = message.length;
+  console.log(`[push] to=${to} msg_len=${msgLen} twilio_sid=${sid} twilio_status=${status}`);
+  if (twilioRes.error_code || twilioRes.error_message) {
+    console.error(`[push] Twilio error: code=${twilioRes.error_code} msg=${twilioRes.error_message}`);
+    return new Response(JSON.stringify(twilioRes), { status: 502, headers: { "Content-Type": "application/json" } });
+  }
+  return new Response(JSON.stringify(twilioRes), {
     headers: { "Content-Type": "application/json" },
   });
 }
