@@ -181,11 +181,15 @@ def extract_bets_for_game(member: dict, rounds: list, game_id: str) -> Optional[
 def _calc_potential(game: dict, guess_winner: str) -> float:
     """
     Projected ניקוד צפוי for a live/upcoming game.
-    Mirrors Sport5 logic: ratio × mult × bonusExact only for exact guesses,
-    ratio × mult for direction-only, 0 if no valid guess yet.
+    - typeOfGuess == "" (pre-game): show max potential = ratio × mult × bonusExact
+    - typeOfGuess == "exact": same
+    - typeOfGuess == "gettingthere": direction only = ratio × mult
+    - typeOfGuess == "nothingyet": 0
     """
+    if not guess_winner:
+        return 0
     tog = game.get("typeOfGuess", "")
-    if not guess_winner or tog == "nothingyet" or not tog:
+    if tog == "nothingyet":
         return 0
     try:
         ratio_map = {
@@ -196,7 +200,8 @@ def _calc_potential(game: dict, guess_winner: str) -> float:
         ratio = ratio_map.get(guess_winner, 0) or 0
         fd    = game.get("fixturedata", {})
         mult  = fd.get("pointsMultplyer", 1) or 1
-        bonus = fd.get("bonusExact", 4) if tog == "exact" else 1
+        # gettingthere = got direction right but not exact score → no exact bonus
+        bonus = 1 if tog == "gettingthere" else (fd.get("bonusExact", 4) or 4)
         return round(ratio * mult * bonus, 1)
     except Exception:
         return 0
