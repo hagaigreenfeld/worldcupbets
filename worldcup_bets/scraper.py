@@ -181,21 +181,25 @@ def extract_bets_for_game(member: dict, rounds: list, game_id: str) -> Optional[
 def _calc_potential(game: dict, guess_winner: str) -> float:
     """
     Max potential points for an exact-score guess (used in kickoff/ניחושים display).
-    Always shows bonusExact — finished games use gamepoints directly instead.
+    Sport5 formula (verified empirically):
+      direction points = ratio × mult
+      exact points     = ratio × mult + bonusExact  (additive, not multiplicative)
+    Ratio mapping: ratio1=team1 wins, ratio2=team2 wins, ratio3=draw.
+    Finished games use gamepoints directly — this is only for pre-game estimates.
     """
     if not guess_winner:
         return 0
     try:
         ratio_map = {
             "team1": game.get("ratio1", 0),
-            "draw":  game.get("ratio2", 0),
-            "team2": game.get("ratio3", 0),
+            "team2": game.get("ratio2", 0),
+            "draw":  game.get("ratio3", 0),
         }
         ratio = ratio_map.get(guess_winner, 0) or 0
         fd    = game.get("fixturedata", {})
         mult  = fd.get("pointsMultplyer", 1) or 1
         bonus = fd.get("bonusExact", 4) or 4
-        return round(ratio * mult * bonus, 1)
+        return round(ratio * mult + bonus, 1)
     except Exception:
         return 0
 
@@ -315,9 +319,9 @@ def get_upcoming_games_with_odds(token: str, n: int = 999) -> list[dict]:
                 "ratio3":       ratio3,
                 "mult":         mult,
                 "bonus_exact":  bonus_exact,
-                "max_pts_team1": round(ratio1 * mult * bonus_exact, 1),
-                "max_pts_draw":  round(ratio2 * mult * bonus_exact, 1),
-                "max_pts_team2": round(ratio3 * mult * bonus_exact, 1),
+                "max_pts_team1": round(ratio1 * mult + bonus_exact, 1),
+                "max_pts_draw":  round(ratio3 * mult + bonus_exact, 1),
+                "max_pts_team2": round(ratio2 * mult + bonus_exact, 1),
                 "kickoff_ts":   kickoff_ts,
             })
 
