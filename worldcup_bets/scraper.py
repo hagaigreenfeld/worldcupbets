@@ -102,7 +102,7 @@ def get_game_info() -> dict:
 
 # ── Data extraction ────────────────────────────────────────────────────────────
 
-def extract_bets_for_game(member: dict, rounds: list, game_id: str) -> Optional[dict]:
+def extract_bets_for_game(member: dict, rounds: list, game_id: str, canonical_game: Optional[dict] = None) -> Optional[dict]:
     """
     From a member's rounds list (returned by get_friend_guesses), pull out the
     bet for one specific game.
@@ -166,7 +166,10 @@ def extract_bets_for_game(member: dict, rounds: list, game_id: str) -> Optional[
                 if game_finished:
                     pot = float(points_won)
                 else:
-                    pot = _calc_potential(game, guess_winner)
+                    # Use canonical_game ratios/fixturedata to avoid drift when
+                    # odds change between per-player API calls during a live game.
+                    ratio_source = canonical_game if canonical_game is not None else game
+                    pot = _calc_potential(ratio_source, guess_winner)
 
                 return {
                     "player_name":      name,
@@ -209,12 +212,25 @@ def _calc_potential(game: dict, guess_winner: str) -> float:
         return 0
 
 
+def _find_game_in_rounds(rounds: list, game_id: str) -> Optional[dict]:
+    """Return the raw game dict for game_id from a player's rounds."""
+    for round_ in rounds:
+        for g in round_.get("games", []):
+            if g.get("gid") == game_id:
+                return g
+    return None
+
+
 def scrape_all_bets_for_game(token: str, game_id: str) -> list[dict]:
     """
     For all 20 group members, fetch their bets and return rows for the given game.
+    Ratios (ratio1/2/3, fixturedata) are fetched from the first available player
+    and reused for all potential_points calculations to avoid drift when odds
+    change during a live game.
     """
     members = get_group_members(token)
     all_rows = []
+    canonical_game: Optional[dict] = None  # locked in from first successful fetch
 
     for member in members:
         uid = member.get("_id", "")
@@ -223,7 +239,12 @@ def scrape_all_bets_for_game(token: str, game_id: str) -> list[dict]:
 
         try:
             guesses = get_friend_guesses(token, uid)
-            row = extract_bets_for_game(member, guesses, game_id)
+
+            # Lock in ratios from first player who has this game
+            if canonical_game is None:
+                canonical_game = _find_game_in_rounds(guesses, game_id)
+
+            row = extract_bets_for_game(member, guesses, game_id, canonical_game=canonical_game)
             if row:
                 all_rows.append(row)
             else:

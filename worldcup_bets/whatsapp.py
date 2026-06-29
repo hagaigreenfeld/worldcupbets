@@ -314,7 +314,7 @@ def format_kickoff_message(bets: list[dict], game_label: str, bonus_bets: list =
     if sorted_scores:
         for score, players in sorted_scores:
             names   = ", ".join(p["name"] for p in players)
-            pot_val = players[0]["pot"]
+            pot_val = max((p["pot"] for p in players), default=0)
             pot     = fmt_pts(pot_val) if pot_val else "?"
             lines.append(f"  *{rtl_score(score)}* — {names} ({pot} נק')")
     else:
