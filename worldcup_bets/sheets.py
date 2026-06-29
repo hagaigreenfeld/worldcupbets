@@ -162,6 +162,49 @@ def update_bets_results(
         log.info("Updated results for %d rows in All Bets", len(updates) // 2)
 
 
+def update_bets_potential_points(
+    spreadsheet: gspread.Spreadsheet,
+    bets: list[dict],
+    game_label: str,
+) -> None:
+    """Update the Potential Points column for existing rows (used after a re-scrape)."""
+    ws = ensure_tab(spreadsheet, "All Bets")
+    rows = ws.get_all_values()
+    if not rows:
+        return
+
+    headers = rows[0]
+    try:
+        game_col    = headers.index("Game")
+        player_col  = headers.index("Player")
+        pot_col_idx = headers.index("Potential Points")
+    except ValueError:
+        log.warning("All Bets tab headers not found — skipping potential_points update")
+        return
+
+    # column letter: A=1, K=11 (0-indexed pot_col_idx + 1 → 1-indexed → letter)
+    pot_col_letter = chr(ord("A") + pot_col_idx)
+    bets_map = {b["player_name"]: b for b in bets}
+    updates  = []
+
+    for i, row in enumerate(rows[1:], start=2):
+        if not row or row[game_col] != game_label:
+            continue
+        player = row[player_col] if player_col < len(row) else ""
+        bet = bets_map.get(player)
+        if not bet:
+            continue
+        pot = bet.get("potential_points", "")
+        if pot:
+            updates.append({"range": f"{pot_col_letter}{i}", "values": [[pot]]})
+
+    if updates:
+        ws.spreadsheet.values_batch_update({"data": updates, "valueInputOption": "USER_ENTERED"})
+        log.info("Updated potential_points for %d rows in All Bets (%s)", len(updates), game_label)
+    else:
+        log.warning("No rows found to update potential_points for %s", game_label)
+
+
 def read_bets_for_game(spreadsheet: gspread.Spreadsheet, game_label: str) -> list[dict]:
     """Read bets written at kickoff time for a given game."""
     ws = ensure_tab(spreadsheet, "All Bets")

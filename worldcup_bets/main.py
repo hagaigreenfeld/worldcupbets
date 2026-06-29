@@ -114,28 +114,33 @@ def main():
     if args.mode == "kickoff":
         bets = []
 
-        # Try sheet first — bets written at game start are immutable
+        # Try sheet first — bets written at game start are preferred
+        spreadsheet = None
         if not args.dry_run:
             try:
                 spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"])
                 bets = sheets.read_bets_for_game(spreadsheet, game_label)
-                # Validate: if all bets have no score guess, data is corrupt — re-scrape
                 if bets and not any(b.get("score_guess") for b in bets):
                     log.warning("Sheet bets have no score data — cache corrupt, re-scraping")
+                    bets = []
+                elif bets and not any(b.get("potential_points") for b in bets):
+                    log.warning("Sheet bets have no potential_points — re-scraping to fix")
                     bets = []
                 elif bets:
                     log.info("▶ Read %d bets from sheet (no Sport5 call needed)", len(bets))
             except Exception as exc:
                 log.warning("Could not read from sheet: %s — will scrape instead", exc)
 
-        # Fall back to Sport5 scrape if sheet was empty
+        # Fall back to Sport5 scrape if sheet was empty or invalid
         if not bets:
             log.info("▶ Scraping bets from Sport5 for: %s", game_label)
             bets, _ = scraper.run(game_id, email, password)
             log.info("  Scraped %d player bets", len(bets))
-            if not args.dry_run:
-                log.info("▶ Writing kickoff bets to Google Sheets...")
+            if not args.dry_run and spreadsheet:
+                log.info("▶ Writing/updating kickoff bets in Google Sheets...")
                 sheets.write_bets(spreadsheet, bets, game_label)
+                # Always patch potential_points (handles case where rows existed but pot was 0)
+                sheets.update_bets_potential_points(spreadsheet, bets, game_label)
 
         bonus_bets = []
         if not args.dry_run:
