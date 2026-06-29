@@ -154,7 +154,12 @@ def extract_bets_for_game(member: dict, rounds: list, game_id: str) -> Optional[
                 r1, r2 = game.get("result1"), game.get("result2")
                 actual_result = f"{r1}:{r2}" if r1 is not None and r2 is not None else ""
 
-                game_finished = r1 is not None and r2 is not None
+                # result1/result2 can be 0 at game start (0:0), so we need typeOfGuess
+                # to distinguish finished from in-progress.
+                # "nothingyet" = in-progress but bet not matching yet — NOT finished.
+                # Only "exact"/"gettingthere"/"miss" mean the game is definitively over.
+                tog           = game.get("typeOfGuess") or ""
+                game_finished = r1 is not None and r2 is not None and tog in ("exact", "gettingthere", "miss")
                 points_won    = game.get("gamepoints", 0) or 0
 
                 # For finished games use actual points; for live/upcoming use Sport5 projection.
