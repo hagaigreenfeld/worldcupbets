@@ -313,8 +313,9 @@ def format_kickoff_message(bets: list[dict], game_label: str, bonus_bets: list =
     sorted_scores = sorted(score_clusters.items(), key=lambda x: (-len(x[1]), x[0]))
     if sorted_scores:
         for score, players in sorted_scores:
-            names = ", ".join(p["name"] for p in players)
-            pot   = fmt_pts(players[0]["pot"])
+            names   = ", ".join(p["name"] for p in players)
+            pot_val = players[0]["pot"]
+            pot     = fmt_pts(pot_val) if pot_val else "?"
             lines.append(f"  *{rtl_score(score)}* — {names} ({pot} נק')")
     else:
         lines.append("  אין הימורי תוצאה")
