@@ -204,7 +204,7 @@ def _calc_potential(game: dict, guess_winner: str) -> float:
             "draw":  game.get("ratio3", 0),
         }
         ratio = ratio_map.get(guess_winner, 0) or 0
-        fd    = game.get("fixturedata", {})
+        fd    = game.get("fixturedata") or {}
         mult  = fd.get("pointsMultplyer", 1) or 1
         bonus = fd.get("bonusExact", 4) or 4
         return round(ratio * mult + bonus, 1)
