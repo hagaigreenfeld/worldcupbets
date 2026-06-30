@@ -40,11 +40,14 @@ def get_sheet(sheet_id: str) -> gspread.Spreadsheet:
 
 
 def ensure_tab(spreadsheet: gspread.Spreadsheet, title: str) -> gspread.Worksheet:
-    """Return the worksheet named `title`, creating it if needed."""
+    """Return the worksheet named `title`, creating it if needed.
+    Extends the grid to 2000 rows if the existing sheet is smaller."""
     for ws in spreadsheet.worksheets():
         if ws.title.strip().lower() == title.strip().lower():
+            if ws.row_count < 2000:
+                ws.resize(rows=2000)
             return ws
-    ws = spreadsheet.add_worksheet(title=title, rows=500, cols=30)
+    ws = spreadsheet.add_worksheet(title=title, rows=2000, cols=30)
     log.info("Created tab: %s", title)
     return ws
 
@@ -196,8 +199,8 @@ def update_bets_results(
         bet = bets_map.get(player)
         if not bet:
             continue
-        updates.append({"range": f"{result_letter}{i}", "values": [[bet.get("actual_result", "")]]})
-        updates.append({"range": f"{points_letter}{i}", "values": [[bet.get("points_won", "")]]})
+        updates.append({"range": f"'All Bets'!{result_letter}{i}", "values": [[bet.get("actual_result", "")]]})
+        updates.append({"range": f"'All Bets'!{points_letter}{i}", "values": [[bet.get("points_won", "")]]})
 
     if updates:
         ws.spreadsheet.values_batch_update({"data": updates, "valueInputOption": "USER_ENTERED"})
@@ -255,7 +258,7 @@ def update_bets_potential_points(
             continue
         pot = bet.get("potential_points", "")
         if pot:
-            updates.append({"range": f"{pot_col_letter}{i}", "values": [[pot]]})
+            updates.append({"range": f"'All Bets'!{pot_col_letter}{i}", "values": [[pot]]})
 
     if updates:
         ws.spreadsheet.values_batch_update({"data": updates, "valueInputOption": "USER_ENTERED"})
