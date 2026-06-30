@@ -194,10 +194,11 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
 
 def find_funniest_bets(enriched_bets: list[dict], actual_result: str) -> list[dict]:
     """
-    Return zero or more funny-bet entries worth highlighting:
-      - Furthest score: highest Manhattan distance |g1-r1|+|g2-r2| among wrong bets
-      - Lone underdog: the only person(s) who bet on the losing side
-    Each entry: {type, names, guess, note}
+    Return funny-bet entries worth highlighting (each {names:[name], guess}):
+      A. Blowout: guessed the actual winner but by a huge margin (won by 3+).
+      B. Brave upset: bet the losing team to win — only if that team was the
+         less-favorite pick (fewer backers than the winning team).
+    Draws are skipped (no clear winner/underdog).
     """
     if not actual_result or ":" not in actual_result:
         return []
@@ -205,16 +206,25 @@ def find_funniest_bets(enriched_bets: list[dict], actual_result: str) -> list[di
         r1, r2 = int(actual_result.split(":")[0]), int(actual_result.split(":")[1])
     except (ValueError, TypeError, IndexError):
         return []
-
-    wrong = [b for b in enriched_bets if b.get("result_status", "").startswith("❌")]
-    if not wrong:
+    if r1 == r2:
         return []
+
+    winner_side = "team1" if r1 > r2 else "team2"
+    loser_side  = "team2" if r1 > r2 else "team1"
+
+    # Crowd backing per side → "favorite" = more backers.
+    dir_bets = [b for b in enriched_bets if b.get("guess_winner") in ("team1", "team2")]
+    backers  = {"team1": 0, "team2": 0}
+    for b in dir_bets:
+        backers[b["guess_winner"]] += 1
 
     results = []
 
-    # ── Furthest score ──────────────────────────────────────────────────────
-    scored_bets = []
-    for b in wrong:
+    # ── A. Blowout for the winning team (won by 3+ goals) ────────────────────
+    blowout = []  # (margin, name, score)
+    for b in enriched_bets:
+        if b.get("guess_winner") != winner_side:
+            continue
         sg = (b.get("score_guess") or "").strip()
         if not sg or ":" not in sg:
             continue
@@ -222,44 +232,22 @@ def find_funniest_bets(enriched_bets: list[dict], actual_result: str) -> list[di
             g1, g2 = int(sg.split(":")[0]), int(sg.split(":")[1])
         except (ValueError, TypeError):
             continue
-        dist = abs(g1 - r1) + abs(g2 - r2)
-        scored_bets.append((dist, b.get("player_name", "?"), sg))
+        margin = abs(g1 - g2)
+        if margin >= 3:
+            blowout.append((margin, b.get("player_name", "?"), sg))
+    if blowout:
+        top = max(m for m, _, _ in blowout)
+        for m, name, sg in blowout:
+            if m == top:
+                results.append({"names": [nickname(name)], "guess": sg})
 
-    if scored_bets:
-        max_dist = max(d for d, _, _ in scored_bets)
-        if max_dist >= 3:  # only funny if meaningfully far
-            furthest = [(n, sg) for d, n, sg in scored_bets if d == max_dist]
-            names = [nickname(n) for n, _ in furthest]
-            guess = furthest[0][1]
-            results.append({
-                "type":  "far",
-                "names": names,
-                "guess": guess,
-                "note":  f"ניחשו {rtl_score(guess)} 🎲",
-            })
-
-    # ── Lone underdog ───────────────────────────────────────────────────────
-    # Determine the actual winner side
-    if r1 > r2:
-        winner_side, loser_side = "team1", "team2"
-    elif r2 > r1:
-        winner_side, loser_side = "team2", "team1"
-    else:
-        winner_side, loser_side = "draw", None  # draw can't have a lone underdog
-
-    if loser_side:
-        all_bets_with_dir = [b for b in enriched_bets if b.get("guess_winner") not in ("N/A", "", None)]
-        loser_bettors = [b for b in all_bets_with_dir if b.get("guess_winner") == loser_side]
-        total_bettors = len(all_bets_with_dir)
-        if 1 <= len(loser_bettors) <= 2 and total_bettors >= 5:
-            names = [nickname(b["player_name"]) for b in loser_bettors]
-            guesses = [b.get("score_guess") or b.get("guess_winner", "") for b in loser_bettors]
-            results.append({
-                "type":  "lone",
-                "names": names,
-                "guess": guesses[0],
-                "note":  f"{'היחיד' if len(names) == 1 else 'היחידים'} שהימרו על הקבוצה שהפסידה 🦁",
-            })
+    # ── B. Brave upset: backed the losing team, and it was the less-favorite ──
+    if backers[loser_side] < backers[winner_side]:
+        for b in dir_bets:
+            if b.get("guess_winner") != loser_side:
+                continue
+            guess = (b.get("score_guess") or "").strip() or b.get("guessed_team_name", "")
+            results.append({"names": [nickname(b.get("player_name", "?"))], "guess": guess})
 
     return results
 
