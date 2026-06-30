@@ -107,10 +107,11 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
     # Funny bets
     if is_final:
         funny = find_funniest_bets(analysis.get("enriched_bets", []), result)
-        for f in funny:
-            names_str = ", ".join(f["names"])
-            lines.append(f"🤡 *{names_str}* — {f['note']}")
         if funny:
+            lines.append("🌀 *אולי ביקום אחר...*")
+            for f in funny:
+                names_str = ", ".join(f["names"])
+                lines.append(f"  🤡 {names_str} — {f['note']}")
             lines.append("")
 
     # Ruined by last goal
@@ -213,7 +214,7 @@ def find_funniest_bets(enriched_bets: list[dict], actual_result: str) -> list[di
                 "type":  "far",
                 "names": names,
                 "guess": guess,
-                "note":  f"ניחשו {rtl_score(guess)} כשהסתיים {rtl_score(actual_result)} 🎲",
+                "note":  f"ניחשו {rtl_score(guess)} 🎲",
             })
 
     # ── Lone underdog ───────────────────────────────────────────────────────
