@@ -116,12 +116,11 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
 
     # Ruined by last goal
     if is_final:
-        ruined = find_ruined_by_last_goal(
-            analysis.get("enriched_bets", []), result
-        )
-        ruined_names = [nickname(n) for n in ruined]
-        if ruined_names:
-            lines.append(f"💔 *נשבר בריבר:* {', '.join(ruined_names)}")
+        ruined = find_ruined_by_last_goal(analysis.get("enriched_bets", []), result)
+        if ruined:
+            lines.append("💔 *נשבר בריבר:*")
+            for r in ruined:
+                lines.append(f"  {nickname(r['name'])} — ניחש {rtl_score(r['guess'])}")
             lines.append("")
 
     # No bet
@@ -243,9 +242,9 @@ def find_funniest_bets(enriched_bets: list[dict], actual_result: str) -> list[di
     return results
 
 
-def find_ruined_by_last_goal(enriched_bets: list[dict], actual_result: str) -> list[str]:
+def find_ruined_by_last_goal(enriched_bets: list[dict], actual_result: str) -> list[dict]:
     """
-    Return player names whose exact bet matched a score that existed during the game
+    Return dicts {name, guess} whose exact bet matched a score that existed during the game
     but was broken by the final goal.
     Heuristic: bet = final_score minus one goal by either team
     (i.e., the score WAS their bet, then the last goal broke it).
@@ -262,19 +261,16 @@ def find_ruined_by_last_goal(enriched_bets: list[dict], actual_result: str) -> l
         sg = (bet.get("score_guess") or "").strip()
         if not sg or ":" not in sg:
             continue
-        # Skip bets that were already exact — they weren't "ruined"
         if bet.get("result_status", "").startswith("🎯"):
             continue
         try:
             g1, g2 = int(sg.split(":")[0]), int(sg.split(":")[1])
         except (ValueError, TypeError, IndexError):
             continue
-        # Ruined by last team2 goal: my bet was r1:(r2-1) before that goal
         if g1 == r1 and g2 == r2 - 1 and r2 > 0:
-            ruined.append(bet.get("player_name", "?"))
-        # Ruined by last team1 goal: my bet was (r1-1):r2 before that goal
+            ruined.append({"name": bet.get("player_name", "?"), "guess": sg})
         elif g2 == r2 and g1 == r1 - 1 and r1 > 0:
-            ruined.append(bet.get("player_name", "?"))
+            ruined.append({"name": bet.get("player_name", "?"), "guess": sg})
     return ruined
 
 
