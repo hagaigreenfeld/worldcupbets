@@ -84,12 +84,18 @@ def game_summary(bets: list[dict]) -> dict:
     top_pts = pts_sorted[0]["points_won"] if pts_sorted else 0
     top_earners = [b["player_name"] for b in pts_sorted if float(b.get("points_won", 0)) == float(top_pts)]
 
+    # Display points: Sport5 awards gamepoints only once a game is final, so
+    # mid-game an exact/correct bet shows 0. Fall back to potential_points then.
+    def _disp_pts(b: dict) -> float:
+        won = float(b.get("points_won", 0) or 0)
+        return won if won > 0 else float(b.get("potential_points", 0) or 0)
+
     # Group exact scorers with their points
     exact_bets = [b for b in bets if b.get("result_status", "").startswith("🎯")]
     exact_by_score: dict[str, list] = {}
     for b in exact_bets:
         exact_by_score.setdefault(b.get("score_guess", ""), []).append(
-            {"name": b["player_name"], "pts": b.get("points_won", 0)}
+            {"name": b["player_name"], "pts": _disp_pts(b)}
         )
 
     # Group correct-direction bettors with their points
@@ -97,7 +103,7 @@ def game_summary(bets: list[dict]) -> dict:
     correct_by_winner: dict[str, list] = {}
     for b in correct_bets:
         correct_by_winner.setdefault(b.get("guess_winner", ""), []).append(
-            {"name": b["player_name"], "pts": b.get("points_won", 0)}
+            {"name": b["player_name"], "pts": _disp_pts(b)}
         )
 
     return {

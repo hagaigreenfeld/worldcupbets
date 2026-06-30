@@ -41,6 +41,15 @@ def nickname(name: str) -> str:
     return NICKNAMES.get(name.strip(), name)
 
 
+def fmt_pts(v) -> str:
+    """Format points: int when whole (10), float otherwise (7.5)."""
+    try:
+        f = float(v)
+    except (ValueError, TypeError):
+        return str(v)
+    return str(int(f)) if f == int(f) else str(f)
+
+
 def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, position_movers: list = None, bonus_bets: list = None) -> str:
     """
     Build a WhatsApp-friendly Hebrew post-game summary.
@@ -77,7 +86,7 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         lines.append("🎯 *ניחוש מדויק:*")
         for score, players in exact_by_score.items():
             names = ", ".join(nickname(p["name"]) for p in players)
-            pts   = players[0]["pts"]
+            pts   = fmt_pts(players[0]["pts"])
             lines.append(f"  *{rtl_score(score)}* — {names} ({pts} נק')")
     else:
         lines.append("🎯 אף אחד לא ניחש מדויק")
@@ -92,7 +101,7 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         for outcome, players in correct_by_winner.items():
             label = winner_label.get(outcome, outcome)
             names = ", ".join(nickname(p["name"]) for p in players)
-            pts   = players[0]["pts"]
+            pts   = fmt_pts(players[0]["pts"])
             lines.append(f"  {label} — {names} ({pts} נק')")
 
     lines.append("")
@@ -162,7 +171,7 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         medal     = medals[i] if i < 3 else f"{r['rank']}."
         delta     = r.get("rank_delta", "")
         delta_str = f" {delta}" if delta and delta != "—" else ""
-        lines.append(f"{medal} {nickname(r['name'])} — {r['points']} נק'{delta_str}")
+        lines.append(f"{medal} {nickname(r['name'])} — {fmt_pts(r['points'])} נק'{delta_str}")
 
     if len(board) > 10:
         lines.append(f"...ועוד {len(board) - 10} שחקנים")
@@ -427,10 +436,6 @@ def format_kickoff_message(bets: list[dict], game_label: str, bonus_bets: list =
         "",
         f"🎯 *הימורי תוצאות:*",
     ]
-
-    def fmt_pts(v) -> str:
-        f = float(v) if v else 0
-        return str(int(f)) if f == int(f) else str(f)
 
     # Sort clusters by number of pickers desc, then by score string
     sorted_scores = sorted(score_clusters.items(), key=lambda x: (-len(x[1]), x[0]))

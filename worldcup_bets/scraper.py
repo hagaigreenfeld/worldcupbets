@@ -182,6 +182,7 @@ def extract_bets_for_game(member: dict, rounds: list, game_id: str, canonical_ga
                     "points_won":       points_won,
                     "potential_points": pot,
                     "round_name":       round_.get("name", ""),
+                    "kickoff_ts":       game.get("beggining", 0) or 0,
                 }
     return None
 

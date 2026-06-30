@@ -198,8 +198,8 @@ def main():
     # Check live match status from football-data.org
     # GAME_STATUS env var overrides (set by scheduler or manual trigger).
     # football-data.org uses English team names; Sport5 uses Hebrew — fuzzy match
-    # rarely succeeds here, so treat unknown status as FINISHED in post-game mode
-    # (manual post-game is only triggered after the game is done).
+    # often fails, so fall back to a time-based heuristic on the Sport5 kickoff
+    # timestamp: a game is final ~2.5h after kickoff (covers extra time + pens).
     fd_status = os.environ.get("GAME_STATUS", "")
     if not fd_status:
         team1 = summary.get("team1", "")
@@ -207,8 +207,24 @@ def main():
         fd_status = sched.check_game_status(
             team1, team2, api_key=os.environ.get("FOOTBALL_DATA_API_KEY")
         )
-    log.info("Match status: %s", fd_status or "unknown — defaulting to FINISHED for post-game")
-    summary["is_final"] = (fd_status == "FINISHED") if fd_status else True
+
+    if fd_status:
+        summary["is_final"] = (fd_status == "FINISHED")
+        log.info("Match status (football-data): %s", fd_status)
+    else:
+        # Time-based fallback using Sport5 kickoff timestamp (ms).
+        import time as _time
+        FINISH_AFTER_MS = int(2.5 * 60 * 60 * 1000)  # 2.5h
+        kickoff_ts = next((float(b["kickoff_ts"]) for b in bets if b.get("kickoff_ts")), 0)
+        now_ms     = _time.time() * 1000
+        if kickoff_ts:
+            elapsed_min = (now_ms - kickoff_ts) / 60000
+            summary["is_final"] = (now_ms - kickoff_ts) >= FINISH_AFTER_MS
+            log.info("Match status (time-based): kickoff %.0f min ago → is_final=%s",
+                     elapsed_min, summary["is_final"])
+        else:
+            summary["is_final"] = True
+            log.info("Match status: no kickoff_ts — defaulting to FINISHED")
 
     log.info("  Game:    %s", summary.get("game", "?"))
     log.info("  Result:  %s", summary.get("actual_result", "Pending"))
