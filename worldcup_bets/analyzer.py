@@ -32,13 +32,16 @@ def enrich_bets(bets: list[dict]) -> list[dict]:
 
         actual = row.get("actual_result", "")
         score_guess = row.get("score_guess", "")
-        pts = row.get("points_won", 0)
 
-        if not actual:
+        # Classify by DIRECTION vs the actual score — deterministic and
+        # consistent. Do NOT use Sport5 gamepoints: they're scraped per-player
+        # at different live moments, so identical bets could disagree.
+        actual_parsed = _parse_score(actual) if actual else None
+        if not actual or actual_parsed is None:
             status = "⏳ Pending"
-        elif score_guess and actual and score_guess == actual:
+        elif score_guess and score_guess == actual:
             status = "🎯 Exact!"
-        elif pts and float(pts) > 0:
+        elif guess and guess not in ("N/A", "") and guess == _winner_of(*actual_parsed):
             status = "✅ Correct direction"
         else:
             status = "❌ Wrong"

@@ -203,10 +203,15 @@ def main():
     if not fd_status and live:
         fd_status = live.get("status", "")
 
-    if live and live.get("score"):
+    # Override the score with football-data ONLY for live games — Sport5's
+    # result1/result2 lags during play. For FINISHED games keep Sport5's result:
+    # it is the 90-minute score the bets are graded on, whereas football-data's
+    # fullTime includes extra time + penalties (which the bets do NOT cover).
+    is_live = fd_status in ("IN_PLAY", "PAUSED")
+    if live and live.get("score") and is_live:
         old_result = next((b.get("actual_result") for b in bets if b.get("actual_result")), "")
         if live["score"] != old_result:
-            log.info("Overriding result %s → %s (football-data live)", old_result or "—", live["score"])
+            log.info("Overriding live result %s → %s (football-data)", old_result or "—", live["score"])
         for b in bets:
             b["actual_result"] = live["score"]
 
