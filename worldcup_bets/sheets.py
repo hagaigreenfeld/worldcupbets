@@ -562,6 +562,61 @@ def write_upcoming_games(spreadsheet: gspread.Spreadsheet, games: list[dict]) ->
     log.info("Upcoming Games tab updated (%d games)", len(games))
 
 
+UPCOMING_BETS_HEADERS = [
+    "Game", "Round", "Kickoff (UTC)", "Team 1", "Team 2",
+    "Player", "Score Guess", "Direction",
+]
+
+
+def write_upcoming_bets(
+    spreadsheet: gspread.Spreadsheet,
+    games: list[dict],
+    bets_per_game: dict[str, list[dict]],
+) -> None:
+    """Overwrite the Upcoming Bets tab with all players' guesses for all upcoming games."""
+    ws  = ensure_tab(spreadsheet, "Upcoming Bets")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    rows = [UPCOMING_BETS_HEADERS]
+    for g in games:
+        gid  = g.get("gid", "")
+        bets = bets_per_game.get(gid, [])
+        if not bets:
+            continue
+
+        ts = g.get("kickoff_ts", 0)
+        try:
+            kickoff_str = (
+                datetime.fromtimestamp(int(ts) / 1000, tz=timezone.utc).strftime("%d/%m %H:%M")
+                if ts else ""
+            )
+        except Exception:
+            kickoff_str = str(ts)
+
+        label  = f"{g['team1']} vs {g['team2']}"
+        round_ = g.get("round_name", "")
+        t1     = g.get("team1", "")
+        t2     = g.get("team2", "")
+
+        for b in bets:
+            direction = b.get("guess_winner", "")
+            dir_label = {"team1": t1, "team2": t2, "draw": "תיקו"}.get(direction, direction)
+            rows.append([
+                label,
+                round_,
+                kickoff_str,
+                t1,
+                t2,
+                b.get("player_name", ""),
+                b.get("score_guess", ""),
+                dir_label,
+            ])
+
+    ws.clear()
+    ws.update(rows, value_input_option="USER_ENTERED")
+    log.info("Upcoming Bets tab updated (%d rows across %d games)", len(rows) - 1, len(games))
+
+
 # ── Main entry ─────────────────────────────────────────────────────────────────
 
 def write_all(

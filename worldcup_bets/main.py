@@ -89,18 +89,23 @@ def main():
             spreadsheet = sheets.get_sheet(os.environ["GOOGLE_SHEET_ID"])
             leaderboard = sheets.read_leaderboard(spreadsheet)
 
-        # Scrape all players' current bets for the next few games
+        # Scrape all players' bets for ALL upcoming games in one pass
+        # (each player fetched once; all game bets extracted from that single call)
+        all_gids  = [g["gid"] for g in all_upcoming]
         next_gids = [g["gid"] for g in next_few]
-        log.info("▶ Scraping player bets for %d upcoming games...", len(next_few))
-        bets_per_game = scraper.scrape_all_players_upcoming(token, next_gids)
+        log.info("▶ Scraping player bets for all %d upcoming games...", len(all_upcoming))
+        bets_per_game = scraper.scrape_all_players_upcoming(token, all_gids)
 
-        # Write full schedule to sheet
+        # Write full schedule + all bets to sheet
         if not args.dry_run:
             log.info("▶ Writing upcoming games to sheet (%d games)...", len(all_upcoming))
             sheets.write_upcoming_games(spreadsheet, all_upcoming)
+            log.info("▶ Writing all upcoming player bets to sheet...")
+            sheets.write_upcoming_bets(spreadsheet, all_upcoming, bets_per_game)
 
-        # Analyze next few games
-        game_analyses = analyzer.coming_up_analysis(next_few, bets_per_game, leaderboard)
+        # Analyze only the next few games for WhatsApp message
+        next_bets     = {gid: bets_per_game.get(gid, []) for gid in next_gids}
+        game_analyses = analyzer.coming_up_analysis(next_few, next_bets, leaderboard)
 
         if args.dry_run:
             print(whatsapp.format_coming_up_message(game_analyses))
