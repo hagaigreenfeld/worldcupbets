@@ -123,9 +123,14 @@ def main():
                 if bets and not any(b.get("score_guess") for b in bets):
                     log.warning("Sheet bets have no score data — cache corrupt, re-scraping")
                     bets = []
-                elif bets and not any(b.get("potential_points") for b in bets):
-                    log.warning("Sheet bets have no potential_points — re-scraping to fix")
-                    bets = []
+                elif bets:
+                    pot_nonzero = sum(1 for b in bets if b.get("potential_points"))
+                    if pot_nonzero < len(bets) * 0.8:
+                        log.warning(
+                            "Sheet bets: only %d/%d have potential_points — re-scraping to fix",
+                            pot_nonzero, len(bets),
+                        )
+                        bets = []
                 elif bets:
                     log.info("▶ Read %d bets from sheet (no Sport5 call needed)", len(bets))
             except Exception as exc:
