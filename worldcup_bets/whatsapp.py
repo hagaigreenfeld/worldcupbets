@@ -120,7 +120,7 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         if ruined:
             lines.append("💔 *נשבר בריבר:*")
             for r in ruined:
-                lines.append(f"  {nickname(r['name'])} — ניחש {rtl_score(r['guess'])}")
+                lines.append(f"  {nickname(r['name'])} ({rtl_score(r['guess'])})")
             lines.append("")
 
     # No bet
