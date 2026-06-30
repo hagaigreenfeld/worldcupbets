@@ -80,46 +80,86 @@ BETS_HEADERS = [
 ]
 
 
+def _bet_row(game_label: str, b: dict, now: str) -> list:
+    return [
+        game_label,
+        b.get("round_name", ""),
+        b.get("player_name", ""),
+        b.get("team1", ""),
+        b.get("team2", ""),
+        b.get("guess_winner", ""),
+        b.get("score_guess", ""),
+        b.get("actual_result", ""),
+        b.get("points_won", ""),
+        b.get("potential_points", ""),
+        now,
+    ]
+
+
 def write_bets(
     spreadsheet: gspread.Spreadsheet,
     bets: list[dict],
     game_label: str,
 ) -> None:
-    """Write bets for a game. Skips silently if rows for this game already exist."""
-    ws = ensure_tab(spreadsheet, "All Bets")
-    existing = ws.get_all_values()
+    """Write bets for a game. Overwrites any existing rows for this game (in case
+    they were written with stale/empty potential_points by an earlier run)."""
+    overwrite_game_bets(spreadsheet, bets, game_label)
 
-    # Skip if this game was already written
-    if any(row and row[0] == game_label for row in existing[1:]):
-        log.info("All Bets: rows for '%s' already exist — skipping write", game_label)
+
+def overwrite_game_bets(
+    spreadsheet: gspread.Spreadsheet,
+    bets: list[dict],
+    game_label: str,
+) -> None:
+    """Delete all existing rows for game_label in All Bets and rewrite with fresh data.
+    Also ensures the header row matches BETS_HEADERS (fixes old-format sheets)."""
+    ws      = ensure_tab(spreadsheet, "All Bets")
+    rows    = ws.get_all_values()
+    now     = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    if not rows:
+        # Empty sheet: write header + data in one shot
+        ws.update([BETS_HEADERS] + [_bet_row(game_label, b, now) for b in bets],
+                  value_input_option="USER_ENTERED")
+        log.info("All Bets tab: wrote header + %d rows for %s", len(bets), game_label)
         return
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    new_rows = []
+    # Identify header row: first row that contains "Game" (col 0) and "Player" (col 2)
+    # Old code had a "Status" column that was later removed — rewrite the header if stale.
+    header_row_idx = None  # 0-indexed in `rows`
+    for idx, row in enumerate(rows):
+        if row and row[0] == "Game" and len(row) >= 3 and row[2] == "Player":
+            header_row_idx = idx
+            break
 
-    if not existing:
-        new_rows.append(BETS_HEADERS)
+    # Collect 1-indexed sheet row numbers for this game (skip header row)
+    game_rows_sheet = []  # 1-indexed
+    for idx, row in enumerate(rows):
+        if idx == header_row_idx:
+            continue
+        if row and row[0] == game_label:
+            game_rows_sheet.append(idx + 1)  # sheets are 1-indexed
 
-    for b in bets:
-        new_rows.append([
-            game_label,
-            b.get("round_name", ""),
-            b.get("player_name", ""),
-            b.get("team1", ""),
-            b.get("team2", ""),
-            b.get("guess_winner", ""),
-            b.get("score_guess", ""),
-            b.get("actual_result", ""),
-            b.get("points_won", ""),
-            b.get("potential_points", ""),
-            now,
-        ])
+    # Delete stale rows in reverse order (so indices don't shift)
+    for sheet_row in reversed(game_rows_sheet):
+        ws.delete_rows(sheet_row)
+    if game_rows_sheet:
+        log.info("Deleted %d stale rows for %s", len(game_rows_sheet), game_label)
 
-    if existing:
-        ws.append_rows(new_rows, value_input_option="USER_ENTERED")
-    else:
-        ws.update(new_rows, value_input_option="USER_ENTERED")
+    # Fix header row if it's stale (wrong columns from old code)
+    if header_row_idx is not None and rows[header_row_idx] != BETS_HEADERS:
+        ws.update([BETS_HEADERS], range_name=f"A{header_row_idx + 1}",
+                  value_input_option="USER_ENTERED")
+        log.info("Rewrote All Bets header row (old format detected)")
 
+    # If no header row found, prepend one before the data
+    if header_row_idx is None:
+        ws.insert_row(BETS_HEADERS, index=1, value_input_option="USER_ENTERED")
+        log.info("Inserted missing header row in All Bets")
+
+    # Append fresh rows for this game
+    new_rows = [_bet_row(game_label, b, now) for b in bets]
+    ws.append_rows(new_rows, value_input_option="USER_ENTERED")
     log.info("All Bets tab: wrote %d rows for %s", len(bets), game_label)
 
 
@@ -136,14 +176,16 @@ def update_bets_results(
 
     headers = rows[0]
     try:
-        game_col   = headers.index("Game")
-        player_col = headers.index("Player")
-        result_col = headers.index("Actual Result")
-        points_col = headers.index("Points Won")
+        game_col      = headers.index("Game")
+        player_col    = headers.index("Player")
+        result_col    = headers.index("Actual Result")
+        points_col    = headers.index("Points Won")
     except ValueError:
         log.warning("All Bets tab headers not found — skipping result update")
         return
 
+    result_letter = chr(ord("A") + result_col)
+    points_letter = chr(ord("A") + points_col)
     bets_map = {b["player_name"]: b for b in bets}
     updates  = []
 
@@ -154,8 +196,8 @@ def update_bets_results(
         bet = bets_map.get(player)
         if not bet:
             continue
-        updates.append({"range": f"I{i}", "values": [[bet.get("actual_result", "")]]})
-        updates.append({"range": f"J{i}", "values": [[bet.get("points_won", "")]]})
+        updates.append({"range": f"{result_letter}{i}", "values": [[bet.get("actual_result", "")]]})
+        updates.append({"range": f"{points_letter}{i}", "values": [[bet.get("points_won", "")]]})
 
     if updates:
         ws.spreadsheet.values_batch_update({"data": updates, "valueInputOption": "USER_ENTERED"})
@@ -167,27 +209,44 @@ def update_bets_potential_points(
     bets: list[dict],
     game_label: str,
 ) -> None:
-    """Update the Potential Points column for existing rows (used after a re-scrape)."""
+    """Update the Potential Points column for existing rows (used after a re-scrape).
+    Handles sheets written by old code that had a different column layout."""
     ws = ensure_tab(spreadsheet, "All Bets")
     rows = ws.get_all_values()
     if not rows:
         return
 
-    headers = rows[0]
-    try:
-        game_col    = headers.index("Game")
-        player_col  = headers.index("Player")
-        pot_col_idx = headers.index("Potential Points")
-    except ValueError:
-        log.warning("All Bets tab headers not found — skipping potential_points update")
+    # Find the header row (may not be row 0 on malformed sheets)
+    header_row = None
+    header_sheet_idx = None  # 1-indexed
+    for idx, row in enumerate(rows):
+        if row and "Game" in row and "Player" in row and "Potential Points" in row:
+            header_row = row
+            header_sheet_idx = idx + 1
+            break
+
+    if not header_row:
+        log.warning("All Bets: could not find header row with 'Potential Points' — "
+                    "overwriting game rows instead")
+        overwrite_game_bets(spreadsheet, bets, game_label)
         return
 
-    # column letter: A=1, K=11 (0-indexed pot_col_idx + 1 → 1-indexed → letter)
+    try:
+        game_col    = header_row.index("Game")
+        player_col  = header_row.index("Player")
+        pot_col_idx = header_row.index("Potential Points")
+    except ValueError:
+        log.warning("All Bets tab headers incomplete — overwriting game rows instead")
+        overwrite_game_bets(spreadsheet, bets, game_label)
+        return
+
     pot_col_letter = chr(ord("A") + pot_col_idx)
     bets_map = {b["player_name"]: b for b in bets}
     updates  = []
 
-    for i, row in enumerate(rows[1:], start=2):
+    for i, row in enumerate(rows, start=1):
+        if i == header_sheet_idx:
+            continue
         if not row or row[game_col] != game_label:
             continue
         player = row[player_col] if player_col < len(row) else ""
@@ -202,7 +261,8 @@ def update_bets_potential_points(
         ws.spreadsheet.values_batch_update({"data": updates, "valueInputOption": "USER_ENTERED"})
         log.info("Updated potential_points for %d rows in All Bets (%s)", len(updates), game_label)
     else:
-        log.warning("No rows found to update potential_points for %s", game_label)
+        log.warning("No rows found to update potential_points for %s — overwriting", game_label)
+        overwrite_game_bets(spreadsheet, bets, game_label)
 
 
 def read_bets_for_game(spreadsheet: gspread.Spreadsheet, game_label: str) -> list[dict]:
