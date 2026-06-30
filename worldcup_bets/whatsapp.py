@@ -104,6 +104,15 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         lines.append(f"❌ *טעו:* {', '.join(wrong)}")
         lines.append("")
 
+    # Funny bets
+    if is_final:
+        funny = find_funniest_bets(analysis.get("enriched_bets", []), result)
+        for f in funny:
+            names_str = ", ".join(f["names"])
+            lines.append(f"🤡 *{names_str}* — {f['note']}")
+        if funny:
+            lines.append("")
+
     # Ruined by last goal
     if is_final:
         ruined = find_ruined_by_last_goal(
@@ -159,6 +168,78 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         lines.append(f"...ועוד {len(board) - 10} שחקנים")
 
     return "\n".join(lines)
+
+
+def find_funniest_bets(enriched_bets: list[dict], actual_result: str) -> list[dict]:
+    """
+    Return zero or more funny-bet entries worth highlighting:
+      - Furthest score: highest Manhattan distance |g1-r1|+|g2-r2| among wrong bets
+      - Lone underdog: the only person(s) who bet on the losing side
+    Each entry: {type, names, guess, note}
+    """
+    if not actual_result or ":" not in actual_result:
+        return []
+    try:
+        r1, r2 = int(actual_result.split(":")[0]), int(actual_result.split(":")[1])
+    except (ValueError, TypeError, IndexError):
+        return []
+
+    wrong = [b for b in enriched_bets if b.get("result_status", "").startswith("❌")]
+    if not wrong:
+        return []
+
+    results = []
+
+    # ── Furthest score ──────────────────────────────────────────────────────
+    scored_bets = []
+    for b in wrong:
+        sg = (b.get("score_guess") or "").strip()
+        if not sg or ":" not in sg:
+            continue
+        try:
+            g1, g2 = int(sg.split(":")[0]), int(sg.split(":")[1])
+        except (ValueError, TypeError):
+            continue
+        dist = abs(g1 - r1) + abs(g2 - r2)
+        scored_bets.append((dist, b.get("player_name", "?"), sg))
+
+    if scored_bets:
+        max_dist = max(d for d, _, _ in scored_bets)
+        if max_dist >= 3:  # only funny if meaningfully far
+            furthest = [(n, sg) for d, n, sg in scored_bets if d == max_dist]
+            names = [nickname(n) for n, _ in furthest]
+            guess = furthest[0][1]
+            results.append({
+                "type":  "far",
+                "names": names,
+                "guess": guess,
+                "note":  f"ניחשו {rtl_score(guess)} כשהסתיים {rtl_score(actual_result)} 🎲",
+            })
+
+    # ── Lone underdog ───────────────────────────────────────────────────────
+    # Determine the actual winner side
+    if r1 > r2:
+        winner_side, loser_side = "team1", "team2"
+    elif r2 > r1:
+        winner_side, loser_side = "team2", "team1"
+    else:
+        winner_side, loser_side = "draw", None  # draw can't have a lone underdog
+
+    if loser_side:
+        all_bets_with_dir = [b for b in enriched_bets if b.get("guess_winner") not in ("N/A", "", None)]
+        loser_bettors = [b for b in all_bets_with_dir if b.get("guess_winner") == loser_side]
+        total_bettors = len(all_bets_with_dir)
+        if 1 <= len(loser_bettors) <= 2 and total_bettors >= 5:
+            names = [nickname(b["player_name"]) for b in loser_bettors]
+            guesses = [b.get("score_guess") or b.get("guess_winner", "") for b in loser_bettors]
+            results.append({
+                "type":  "lone",
+                "names": names,
+                "guess": guesses[0],
+                "note":  f"{'היחיד' if len(names) == 1 else 'היחידים'} שהימרו על הקבוצה שהפסידה 🦁",
+            })
+
+    return results
 
 
 def find_ruined_by_last_goal(enriched_bets: list[dict], actual_result: str) -> list[str]:
