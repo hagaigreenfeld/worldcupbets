@@ -120,11 +120,8 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         funny = find_funniest_bets(analysis.get("enriched_bets", []), result)
         if funny:
             lines.append("🤡 *אולי ביקום אחר...*")
-            for f in funny:
-                names_str = ", ".join(f["names"])
-                guess     = f.get("guess", "")
-                guess_disp = rtl_score(guess) if ":" in str(guess) else guess
-                lines.append(f"  {names_str} — {guess_disp}")
+            for idx, f in enumerate(funny):
+                lines.append(f"  {f['name']} — {funny_sentence(f, idx)}")
             lines.append("")
 
     # Ruined by last goal — group by the (common) broken score; show it in
@@ -235,21 +232,51 @@ def find_funniest_bets(enriched_bets: list[dict], actual_result: str) -> list[di
         margin = abs(g1 - g2)
         if margin >= 3:
             blowout.append((margin, b.get("player_name", "?"), sg))
+    # winning / losing team display names (from any bet on the game)
+    sample = enriched_bets[0] if enriched_bets else {}
+    team1_name = sample.get("team1", "")
+    team2_name = sample.get("team2", "")
+    winner_name = team1_name if winner_side == "team1" else team2_name
+    loser_name  = team2_name if winner_side == "team1" else team1_name
+
     if blowout:
         top = max(m for m, _, _ in blowout)
         for m, name, sg in blowout:
             if m == top:
-                results.append({"names": [nickname(name)], "guess": sg})
+                results.append({"type": "blowout", "name": nickname(name), "team": winner_name})
 
     # ── B. Brave upset: backed the losing team, and it was the less-favorite ──
     if backers[loser_side] < backers[winner_side]:
         for b in dir_bets:
             if b.get("guess_winner") != loser_side:
                 continue
-            guess = (b.get("score_guess") or "").strip() or b.get("guessed_team_name", "")
-            results.append({"names": [nickname(b.get("player_name", "?"))], "guess": guess})
+            results.append({"type": "upset", "name": nickname(b.get("player_name", "?")), "team": loser_name})
 
     return results
+
+
+_UPSET_LINES = [
+    "נו באמת, כאילו ש{t} תנצח",
+    "באמא שלכם? ניצחון ל{t}???",
+    "חיים בסרט ש{t} תנצח",
+    "{t} תנצח? רק ביקום מקביל",
+    "מה עישנת כשהימרת על {t}?",
+]
+_BLOWOUT_LINES = [
+    "{t} בכזה הפרש? איזה דמיון",
+    "מפולת של {t}? חלמת יפה",
+    "{t} עשתה טבח? רק בראש שלך",
+]
+
+
+def funny_sentence(entry: dict, idx: int) -> str:
+    """Build a mocking sentence for an 'אולי ביקום אחר' entry."""
+    t = entry.get("team", "")
+    if entry.get("type") == "blowout":
+        tmpl = _BLOWOUT_LINES[idx % len(_BLOWOUT_LINES)]
+    else:
+        tmpl = _UPSET_LINES[idx % len(_UPSET_LINES)]
+    return tmpl.format(t=t)
 
 
 def find_ruined_by_last_goal(enriched_bets: list[dict], actual_result: str) -> list[dict]:
