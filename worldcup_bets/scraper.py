@@ -199,14 +199,14 @@ def _calc_potential(game: dict, guess_winner: str) -> float:
         return 0
     try:
         ratio_map = {
-            "team1": game.get("ratio1", 0),
-            "team2": game.get("ratio2", 0),
-            "draw":  game.get("ratio3", 0),
+            "team1": float(game.get("ratio1") or 0),
+            "team2": float(game.get("ratio2") or 0),
+            "draw":  float(game.get("ratio3") or 0),
         }
-        ratio = ratio_map.get(guess_winner, 0) or 0
+        ratio = ratio_map.get(guess_winner, 0.0)
         fd    = game.get("fixturedata") or {}
-        mult  = fd.get("pointsMultplyer", 1) or 1
-        bonus = fd.get("bonusExact", 4) or 4
+        mult  = float(fd.get("pointsMultplyer") or 1)
+        bonus = float(fd.get("bonusExact") or 4)
         return round(ratio * mult + bonus, 1)
     except Exception:
         return 0
