@@ -141,6 +141,61 @@ def resolve_sport5_game(fd_match: dict, sport5_games: list[dict]) -> Optional[di
     return None
 
 
+def _he_match(sport5_he: str, fd_en: str) -> bool:
+    """Match a Sport5 Hebrew team name against a football-data English name
+    using the EN→HE map; falls back to fuzzy substring for unmapped names."""
+    if not sport5_he or not fd_en:
+        return False
+    mapped_he = sheets.team_en_to_he(fd_en)  # English → Hebrew
+    if mapped_he and mapped_he.strip() == sport5_he.strip():
+        return True
+    return fuzzy_match(sport5_he, fd_en)
+
+
+def get_live_match(team1: str, team2: str, api_key: Optional[str] = None) -> Optional[dict]:
+    """
+    Look up a match by Sport5 Hebrew team names and return live football-data info:
+      {status, score, score_ft}  — score is 'team1:team2' in Sport5 order.
+    Returns None if the match cannot be found.
+    """
+    try:
+        headers = {"X-Auth-Token": api_key} if api_key else {}
+        url  = f"{FOOTBALL_DATA_BASE}/competitions/{WC_COMPETITION}/matches"
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        matches = resp.json().get("matches", [])
+    except Exception as exc:
+        log.warning("football-data.org live lookup failed: %s", exc)
+        return None
+
+    for m in matches:
+        home = (m.get("homeTeam") or {}).get("name") or ""
+        away = (m.get("awayTeam") or {}).get("name") or ""
+        if not home or not away:
+            continue
+
+        # Try both orientations (Sport5 team1 may be fd home or away)
+        if _he_match(team1, home) and _he_match(team2, away):
+            t1_is_home = True
+        elif _he_match(team1, away) and _he_match(team2, home):
+            t1_is_home = False
+        else:
+            continue
+
+        status = m["status"]
+        ft     = (m.get("score") or {}).get("fullTime") or {}
+        h, a   = ft.get("home"), ft.get("away")
+        score  = ""
+        if h is not None and a is not None:
+            # Re-orient to Sport5 team1:team2
+            score = f"{h}:{a}" if t1_is_home else f"{a}:{h}"
+        log.info("Live match %s vs %s: status=%s score=%s", team1, team2, status, score or "—")
+        return {"status": status, "score": score}
+
+    log.warning("Could not find live match in football-data for: %s vs %s", team1, team2)
+    return None
+
+
 def check_game_status(team1: str, team2: str, api_key: Optional[str] = None) -> str:
     """
     Look up the live status of a match by Sport5 team names (Hebrew).

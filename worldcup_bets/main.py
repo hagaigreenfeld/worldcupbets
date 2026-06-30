@@ -190,31 +190,38 @@ def main():
     else:
         log.info("▶ Read %d bets from sheet (no Sport5 call needed)", len(bets))
 
+    # ── Live status + score from football-data.org (matched via EN↔HE map) ───
+    # football-data is the source of truth for both "is the game over" and the
+    # current score — Sport5's result1/result2 can lag. Patch the bets' result
+    # BEFORE analysis so exact/correct/wrong classification uses the live score.
+    _sample = next((b for b in bets if b.get("team1")), bets[0] if bets else {})
+    team1 = _sample.get("team1", "")
+    team2 = _sample.get("team2", "")
+    fd_status = os.environ.get("GAME_STATUS", "")
+    live = sched.get_live_match(team1, team2, api_key=os.environ.get("FOOTBALL_DATA_API_KEY"))
+
+    if not fd_status and live:
+        fd_status = live.get("status", "")
+
+    if live and live.get("score"):
+        old_result = next((b.get("actual_result") for b in bets if b.get("actual_result")), "")
+        if live["score"] != old_result:
+            log.info("Overriding result %s → %s (football-data live)", old_result or "—", live["score"])
+        for b in bets:
+            b["actual_result"] = live["score"]
+
     # ── POST-GAME mode ──────────────────────────────────────────────────────
     log.info("▶ Analyzing results...")
     analysis = analyzer.analyze(bets, leaderboard)
     summary = analysis["summary"]
 
-    # Check live match status from football-data.org
-    # GAME_STATUS env var overrides (set by scheduler or manual trigger).
-    # football-data.org uses English team names; Sport5 uses Hebrew — fuzzy match
-    # often fails, so fall back to a time-based heuristic on the Sport5 kickoff
-    # timestamp: a game is final ~2.5h after kickoff (covers extra time + pens).
-    fd_status = os.environ.get("GAME_STATUS", "")
-    if not fd_status:
-        team1 = summary.get("team1", "")
-        team2 = summary.get("team2", "")
-        fd_status = sched.check_game_status(
-            team1, team2, api_key=os.environ.get("FOOTBALL_DATA_API_KEY")
-        )
-
     if fd_status:
         summary["is_final"] = (fd_status == "FINISHED")
-        log.info("Match status (football-data): %s", fd_status)
+        log.info("Match status (football-data): %s → is_final=%s", fd_status, summary["is_final"])
     else:
-        # Time-based fallback using Sport5 kickoff timestamp (ms).
+        # Fallback: time-based heuristic on Sport5 kickoff timestamp (ms).
         import time as _time
-        FINISH_AFTER_MS = int(2.5 * 60 * 60 * 1000)  # 2.5h
+        FINISH_AFTER_MS = int(2.5 * 60 * 60 * 1000)  # 2.5h covers ET + penalties
         kickoff_ts = next((float(b["kickoff_ts"]) for b in bets if b.get("kickoff_ts")), 0)
         now_ms     = _time.time() * 1000
         if kickoff_ts:
