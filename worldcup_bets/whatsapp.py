@@ -80,29 +80,31 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         "",
     ]
 
-    # Exact score winners
+    # Exact score winners — points shown once in the header (all exact bets
+    # share the same score, hence the same points).
     exact_by_score = summary.get("exact_by_score", {})
     if exact_by_score:
-        lines.append("🎯 *ניחוש מדויק:*")
+        exact_pts = fmt_pts(next(iter(exact_by_score.values()))[0]["pts"])
+        lines.append(f"🎯 *ניחוש מדויק:* ({exact_pts} נק׳)")
         for score, players in exact_by_score.items():
             names = ", ".join(nickname(p["name"]) for p in players)
-            pts   = fmt_pts(players[0]["pts"])
-            lines.append(f"  *{rtl_score(score)}* — {names} ({pts} נק')")
+            lines.append(f"  *{rtl_score(score)}* — {names}")
     else:
         lines.append("🎯 אף אחד לא ניחש מדויק")
 
     lines.append("")
 
-    # Correct direction
+    # Correct direction — points shown once in the header (one winning
+    # direction, all its bettors earn the same direction points).
     correct_by_winner = summary.get("correct_by_winner", {})
     if correct_by_winner:
-        lines.append("✅ *כיוון נכון:*")
+        correct_pts = fmt_pts(next(iter(correct_by_winner.values()))[0]["pts"])
+        lines.append(f"✅ *כיוון נכון:* ({correct_pts} נק׳)")
         winner_label = {"team1": team1, "team2": team2, "draw": "תיקו"}
         for outcome, players in correct_by_winner.items():
             label = winner_label.get(outcome, outcome)
             names = ", ".join(nickname(p["name"]) for p in players)
-            pts   = fmt_pts(players[0]["pts"])
-            lines.append(f"  {label} — {names} ({pts} נק')")
+            lines.append(f"  {label} — {names}")
 
     lines.append("")
 
@@ -117,19 +119,30 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
     if is_final:
         funny = find_funniest_bets(analysis.get("enriched_bets", []), result)
         if funny:
-            lines.append("🌀 *אולי ביקום אחר...*")
+            lines.append("🤡 *אולי ביקום אחר...*")
             for f in funny:
                 names_str = ", ".join(f["names"])
-                lines.append(f"  🤡 {names_str} — {f['note']}")
+                guess     = f.get("guess", "")
+                guess_disp = rtl_score(guess) if ":" in str(guess) else guess
+                lines.append(f"  {names_str} — {guess_disp}")
             lines.append("")
 
-    # Ruined by last goal
+    # Ruined by last goal — group by the (common) broken score; show it in
+    # the header when there's a single shared guess.
     if is_final:
         ruined = find_ruined_by_last_goal(analysis.get("enriched_bets", []), result)
         if ruined:
-            lines.append("💔 *נשבר בריבר:*")
+            by_guess: dict[str, list] = {}
             for r in ruined:
-                lines.append(f"  {nickname(r['name'])} ({rtl_score(r['guess'])})")
+                by_guess.setdefault(r["guess"], []).append(nickname(r["name"]))
+            if len(by_guess) == 1:
+                guess, names = next(iter(by_guess.items()))
+                lines.append(f"💔 *נשבר בריבר:* ({rtl_score(guess)})")
+                lines.append(f"  {', '.join(names)}")
+            else:
+                lines.append("💔 *נשבר בריבר:*")
+                for guess, names in by_guess.items():
+                    lines.append(f"  ({rtl_score(guess)}) {', '.join(names)}")
             lines.append("")
 
     # No bet
