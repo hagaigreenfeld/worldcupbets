@@ -320,6 +320,14 @@ TEAM_EN_TO_HE: dict[str, str] = {
     "Honduras": "הונדורס", "Costa Rica": "קוסטה ריקה", "Panama": "פנמה",
     "Bahrain": "בחריין", "Uzbekistan": "אוזבקיסטן", "Indonesia": "אינדונזיה",
     "China": "סין", "Chile": "צ'ילה", "Bolivia": "בוליביה",
+    "Norway": "נורווגיה", "Sweden": "שבדיה", "Greece": "יוון",
+    "Wales": "ויילס", "Republic of Ireland": "אירלנד", "Ireland": "אירלנד",
+    "Finland": "פינלנד", "Iceland": "איסלנד", "Russia": "רוסיה",
+    "Jordan": "ירדן", "Qatar": "קטאר", "United Arab Emirates": "איחוד האמירויות",
+    "South Africa": "דרום אפריקה", "Mali": "מאלי", "Jamaica": "ג'מייקה",
+    "Cape Verde": "כף ורדה", "DR Congo": "קונגו", "Burkina Faso": "בורקינה פאסו",
+    "Bosnia and Herzegovina": "בוסניה", "North Macedonia": "מקדוניה",
+    "Israel": "ישראל", "Kuwait": "כווית", "Oman": "עומאן",
 }
 
 

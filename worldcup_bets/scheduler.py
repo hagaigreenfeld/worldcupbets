@@ -141,13 +141,24 @@ def resolve_sport5_game(fd_match: dict, sport5_games: list[dict]) -> Optional[di
     return None
 
 
+def _norm_he(s: str) -> str:
+    """Normalize a Hebrew name for tolerant comparison: drop spaces, quotes,
+    geresh and optional aleph (transliteration spelling varies, e.g.
+    פרגוואי vs פראגוואי, שבדיה vs שוודיה)."""
+    if not s:
+        return ""
+    for ch in (" ", "\"", "'", "׳", "״", "א", "ו"):
+        s = s.replace(ch, "")
+    return s.strip()
+
+
 def _he_match(sport5_he: str, fd_en: str) -> bool:
     """Match a Sport5 Hebrew team name against a football-data English name
-    using the EN→HE map; falls back to fuzzy substring for unmapped names."""
+    using the EN→HE map (spelling-tolerant); falls back to fuzzy substring."""
     if not sport5_he or not fd_en:
         return False
     mapped_he = sheets.team_en_to_he(fd_en)  # English → Hebrew
-    if mapped_he and mapped_he.strip() == sport5_he.strip():
+    if mapped_he and _norm_he(mapped_he) == _norm_he(sport5_he):
         return True
     return fuzzy_match(sport5_he, fd_en)
 
