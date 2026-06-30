@@ -119,9 +119,10 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
     if is_final:
         funny = find_funniest_bets(analysis.get("enriched_bets", []), result)
         if funny:
+            sentence, fnames = funny_section(funny)
             lines.append("🤡 *אולי ביקום אחר...*")
-            for idx, f in enumerate(funny):
-                lines.append(f"  {f['name']} — {funny_sentence(f, idx)}")
+            lines.append(f"  {sentence}")
+            lines.append(f"  {', '.join(fnames)}")
             lines.append("")
 
     # Ruined by last goal — group by the (common) broken score; show it in
@@ -260,23 +261,33 @@ _UPSET_LINES = [
     "באמא שלכם? ניצחון ל{t}???",
     "חיים בסרט ש{t} תנצח",
     "{t} תנצח? רק ביקום מקביל",
-    "מה עישנת כשהימרת על {t}?",
+    "מה עישנתם כשהימרתם על {t}?",
+    "ניצחון ל{t}? באיזה עולם דמיוני",
+    "{t} מנצחת רק בדמיון שלכם",
+    "עדיין מחכים שתתעוררו — {t} לא ניצחה",
+    "{t}? הזיה מוחלטת",
 ]
 _BLOWOUT_LINES = [
     "{t} בכזה הפרש? איזה דמיון",
-    "מפולת של {t}? חלמת יפה",
-    "{t} עשתה טבח? רק בראש שלך",
+    "מפולת של {t}? חלמתם יפה",
+    "{t} עשתה טבח? רק בראש שלכם",
+    "{t} בהפרש כזה? לכו לישון",
 ]
 
 
-def funny_sentence(entry: dict, idx: int) -> str:
-    """Build a mocking sentence for an 'אולי ביקום אחר' entry."""
-    t = entry.get("team", "")
-    if entry.get("type") == "blowout":
-        tmpl = _BLOWOUT_LINES[idx % len(_BLOWOUT_LINES)]
-    else:
-        tmpl = _UPSET_LINES[idx % len(_UPSET_LINES)]
-    return tmpl.format(t=t)
+def funny_section(funny: list[dict]) -> tuple[str, list[str]]:
+    """Return (one mocking sentence, list of names) for 'אולי ביקום אחר'.
+    Prefers the underdog (upset) framing; falls back to blowout. One sentence
+    for the whole group — variant chosen deterministically from the team name."""
+    if not funny:
+        return "", []
+    names = [f["name"] for f in funny]
+    # Subject: prefer an upset entry's team, else the first entry's.
+    subject = next((f for f in funny if f.get("type") == "upset"), funny[0])
+    t = subject.get("team", "")
+    lines = _UPSET_LINES if subject.get("type") == "upset" else _BLOWOUT_LINES
+    idx = sum(ord(c) for c in t) % len(lines)  # deterministic per team
+    return lines[idx].format(t=t), names
 
 
 def find_ruined_by_last_goal(enriched_bets: list[dict], actual_result: str) -> list[dict]:
