@@ -7,7 +7,12 @@ name: ⏰ Auto Scheduler
 on:
   schedule:
     - cron: '*/15 * * * *'
-  workflow_dispatch: {}   # manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      postgame_window_minutes:
+        description: "Post-game window in minutes (widen to re-run older games)"
+        required: false
+        default: ""
 
 env:
   SPORT5_EMAIL:           ${{ secrets.SPORT5_EMAIL }}
@@ -36,4 +41,6 @@ jobs:
 
       - name: Run scheduler
         working-directory: worldcup_bets
+        env:
+          POSTGAME_WINDOW_MINUTES: ${{ github.event.inputs.postgame_window_minutes }}
         run: python3 scheduler.py

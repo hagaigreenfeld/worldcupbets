@@ -41,8 +41,9 @@ STATE_TAB          = "Scheduler State"
 KICKOFF_WINDOW_MINUTES = 30
 
 # How long after a game finishes do we still try to send post-game
-# (gives buffer for extra time, penalty shootouts)
-POSTGAME_WINDOW_MINUTES = 60
+# (gives buffer for extra time, penalty shootouts).
+# Override via POSTGAME_WINDOW_MINUTES env for manual re-runs of older games.
+POSTGAME_WINDOW_MINUTES = int(os.environ.get("POSTGAME_WINDOW_MINUTES") or "60")
 
 
 # ── football-data.org ──────────────────────────────────────────────────────────
