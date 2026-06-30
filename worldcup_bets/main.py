@@ -139,7 +139,9 @@ def main():
         # Fall back to Sport5 scrape if sheet was empty or invalid
         if not bets:
             log.info("▶ Scraping bets from Sport5 for: %s", game_label)
-            bets, _ = scraper.run(game_id, email, password)
+            # force_potential=True: kickoff always shows ratio-based potential,
+            # not mid-game gamepoints (which are 0 during live evaluation).
+            bets, _ = scraper.run(game_id, email, password, force_potential=True)
             log.info("  Scraped %d player bets", len(bets))
             if not args.dry_run and spreadsheet:
                 log.info("▶ Writing/updating kickoff bets in Google Sheets...")

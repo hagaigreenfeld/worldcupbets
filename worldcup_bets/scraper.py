@@ -102,7 +102,7 @@ def get_game_info() -> dict:
 
 # ── Data extraction ────────────────────────────────────────────────────────────
 
-def extract_bets_for_game(member: dict, rounds: list, game_id: str, canonical_game: Optional[dict] = None) -> Optional[dict]:
+def extract_bets_for_game(member: dict, rounds: list, game_id: str, canonical_game: Optional[dict] = None, force_potential: bool = False) -> Optional[dict]:
     """
     From a member's rounds list (returned by get_friend_guesses), pull out the
     bet for one specific game.
@@ -163,12 +163,12 @@ def extract_bets_for_game(member: dict, rounds: list, game_id: str, canonical_ga
                 points_won    = game.get("gamepoints", 0) or 0
 
                 # For finished games use actual points; for live/upcoming use Sport5 projection.
-                if game_finished:
+                ratio_source = canonical_game if canonical_game is not None else game
+                if game_finished and not force_potential:
                     pot = float(points_won)
                 else:
-                    # Use canonical_game ratios/fixturedata to avoid drift when
-                    # odds change between per-player API calls during a live game.
-                    ratio_source = canonical_game if canonical_game is not None else game
+                    # force_potential=True (kickoff mode): always show ratio-based estimate
+                    # so mid-game evaluations don't replace pre-game potential with zeros.
                     pot = _calc_potential(ratio_source, guess_winner)
 
                 return {
@@ -221,7 +221,7 @@ def _find_game_in_rounds(rounds: list, game_id: str) -> Optional[dict]:
     return None
 
 
-def scrape_all_bets_for_game(token: str, game_id: str) -> list[dict]:
+def scrape_all_bets_for_game(token: str, game_id: str, force_potential: bool = False) -> list[dict]:
     """
     For all 20 group members, fetch their bets and return rows for the given game.
     Ratios (ratio1/2/3, fixturedata) are fetched from the first available player
@@ -244,7 +244,7 @@ def scrape_all_bets_for_game(token: str, game_id: str) -> list[dict]:
             if canonical_game is None:
                 canonical_game = _find_game_in_rounds(guesses, game_id)
 
-            row = extract_bets_for_game(member, guesses, game_id, canonical_game=canonical_game)
+            row = extract_bets_for_game(member, guesses, game_id, canonical_game=canonical_game, force_potential=force_potential)
             if row:
                 all_rows.append(row)
             else:
@@ -287,13 +287,15 @@ def build_leaderboard(members: list[dict]) -> list[dict]:
 
 # ── Entry point (used by main.py) ──────────────────────────────────────────────
 
-def run(game_id: str, email: str, password: str) -> tuple[list[dict], list[dict]]:
+def run(game_id: str, email: str, password: str, force_potential: bool = False) -> tuple[list[dict], list[dict]]:
     """
     Full scrape run.
     Returns (bets_rows, leaderboard_rows).
+    force_potential=True: kickoff mode — always show ratio-based potential,
+    ignoring mid-game Sport5 evaluations that would produce zeros.
     """
     token   = get_token(email, password)
-    bets    = scrape_all_bets_for_game(token, game_id)
+    bets    = scrape_all_bets_for_game(token, game_id, force_potential=force_potential)
     members = get_group_members(token)
     board   = build_leaderboard(members)
     return bets, board
