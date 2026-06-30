@@ -132,10 +132,12 @@ def fuzzy_match(a: str, b: str) -> bool:
 
 
 def resolve_sport5_game(fd_match: dict, sport5_games: list[dict]) -> Optional[dict]:
-    """Find the Sport5 game dict that corresponds to a football-data match."""
+    """Find the Sport5 game dict that corresponds to a football-data match.
+    Uses the EN↔HE map (spelling-tolerant) so English-only names like Norway
+    resolve against Sport5's Hebrew names."""
     for sg in sport5_games:
-        t1_ok = fuzzy_match(sg["team1"], fd_match["home"]) or fuzzy_match(sg["team1"], fd_match["away"])
-        t2_ok = fuzzy_match(sg["team2"], fd_match["home"]) or fuzzy_match(sg["team2"], fd_match["away"])
+        t1_ok = _he_match(sg["team1"], fd_match["home"]) or _he_match(sg["team1"], fd_match["away"])
+        t2_ok = _he_match(sg["team2"], fd_match["home"]) or _he_match(sg["team2"], fd_match["away"])
         if t1_ok and t2_ok:
             return sg
     return None
