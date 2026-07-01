@@ -41,6 +41,16 @@ def nickname(name: str) -> str:
     return NICKNAMES.get(name.strip(), name)
 
 
+# Knockout-stage keywords in the game label/round; group stage uses "מחזור".
+_KNOCKOUT_KEYWORDS = ("שלב", "האחרונות", "שמינית", "רבע", "חצי", "גמר", "נוקאאוט")
+
+
+def goal_bonus_for_stage(game_label: str) -> int:
+    """Top-scorer pick goal bonus: 3 pts/goal in knockout, 2 in group stage."""
+    label = game_label or ""
+    return 3 if any(k in label for k in _KNOCKOUT_KEYWORDS) else 2
+
+
 def fmt_pts(v) -> str:
     """Format points: int when whole (10), float otherwise (7.5)."""
     try:
@@ -135,12 +145,12 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
                 by_guess.setdefault(r["guess"], []).append(nickname(r["name"]))
             if len(by_guess) == 1:
                 guess, names = next(iter(by_guess.items()))
-                lines.append(f"💔 *נשבר בריבר:* ({rtl_score(guess)})")
+                lines.append(f"💔 *נשבר בריבר:* (הימרו {rtl_score(guess)})")
                 lines.append(f"  {', '.join(names)}")
             else:
                 lines.append("💔 *נשבר בריבר:*")
                 for guess, names in by_guess.items():
-                    lines.append(f"  ({rtl_score(guess)}) {', '.join(names)}")
+                    lines.append(f"  ( הימרו {rtl_score(guess)}) {', '.join(names)}")
             lines.append("")
 
     # No bet
@@ -148,21 +158,22 @@ def format_game_summary(analysis: dict, game_label: str, what_if: dict = None, p
         lines.append(f"😭 *הידעת ולא הימרת?!* {', '.join(no_bet)}")
         lines.append("")
 
-    # Bonus players in this match
+    # Bonus players in this match (top-scorer pick: 2 pts/goal group, 3 knockout)
     active_bonus = bonus_for_teams(bonus_bets or [], team1, team2)
     if active_bonus:
+        per_goal = goal_bonus_for_stage(game_label)
         lines.append("⭐ *בונוס שחקן במשחק הזה:*")
         by_player: dict[str, list] = {}
         for b in active_bonus:
             key = (b["player"], b["team_he"])
             by_player.setdefault(key, []).append(b["nickname"])
         for (player, team_he), nicknames in by_player.items():
-            lines.append(f"  {player} ({team_he}) +2 נק' לכל שער: {', '.join(nicknames)}")
+            lines.append(f"  {player} ({team_he}) +{per_goal} נק' לכל שער: {', '.join(nicknames)}")
         lines.append("")
 
     # What-if scenario
     if what_if:
-        block = format_what_if(what_if, team1, team2, is_final=is_final, bonus_bets=active_bonus)
+        block = format_what_if(what_if, team1, team2, is_final=is_final, bonus_bets=active_bonus, game_label=game_label)
         if block:
             lines.append(block)
             lines.append("")
@@ -343,7 +354,7 @@ def bonus_for_teams(bonus_bets: list[dict], team1_he: str, team2_he: str) -> lis
     return result
 
 
-def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False, bonus_bets: list = None) -> str:
+def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False, bonus_bets: list = None, game_label: str = "") -> str:
     """Format the what-if next-goal analysis block."""
     if not what_if or "if_team1" not in what_if:
         return ""
@@ -380,7 +391,7 @@ def format_what_if(what_if: dict, team1: str, team2: str, is_final: bool = False
                 lines.append(f"    ❌ מפסידים: {', '.join(nickname(c['player']) for c in loses_all)}")
             if bonus_side and not is_final:
                 all_names = ", ".join(b["nickname"] for b in bonus_side)
-                lines.append(f"    ⭐ +2 בונוס: {all_names}")
+                lines.append(f"    ⭐ +{goal_bonus_for_stage(game_label)} בונוס: {all_names}")
 
     return "\n".join(lines)
 
