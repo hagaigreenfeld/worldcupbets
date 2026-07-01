@@ -178,36 +178,55 @@ def main():
         bets        = sheets.read_bets_for_game(spreadsheet, game_label)
         leaderboard = sheets.read_leaderboard(spreadsheet)
 
-    # Determine if we need a fresh scrape:
-    # - No bets in sheet yet, OR
-    # - Bets exist but have no actual_result (game just ended, points not yet updated)
+    # Initial scrape only if the sheet has nothing usable.
     need_scrape = not bets or not any(b.get("actual_result") for b in bets)
-
+    scraped = False
     if need_scrape:
         log.info("▶ Scraping bets from Sport5 for: %s  [mode=%s]", game_label, args.mode)
         bets, leaderboard = scraper.run(game_id, email, password)
+        scraped = True
         log.info("  Scraped %d player bets", len(bets))
     else:
-        log.info("▶ Read %d bets from sheet (no Sport5 call needed)", len(bets))
+        log.info("▶ Read %d bets from sheet", len(bets))
 
-    # ── Live status + score from football-data.org (matched via EN↔HE map) ───
-    # football-data is the source of truth for both "is the game over" and the
-    # current score — Sport5's result1/result2 can lag. Patch the bets' result
-    # BEFORE analysis so exact/correct/wrong classification uses the live score.
+    # ── Determine match status (football-data → time-based fallback) ─────────
     _sample = next((b for b in bets if b.get("team1")), bets[0] if bets else {})
     team1 = _sample.get("team1", "")
     team2 = _sample.get("team2", "")
     fd_status = os.environ.get("GAME_STATUS", "")
     live = sched.get_live_match(team1, team2, api_key=os.environ.get("FOOTBALL_DATA_API_KEY"))
-
     if not fd_status and live:
         fd_status = live.get("status", "")
 
-    # Override the score with football-data ONLY for live games — Sport5's
-    # result1/result2 lags during play. For FINISHED games keep Sport5's result:
-    # it is the 90-minute score the bets are graded on, whereas football-data's
-    # fullTime includes extra time + penalties (which the bets do NOT cover).
+    if fd_status:
+        is_final = (fd_status == "FINISHED")
+        log.info("Match status (football-data): %s → is_final=%s", fd_status, is_final)
+    else:
+        import time as _time
+        FINISH_AFTER_MS = int(2.5 * 60 * 60 * 1000)  # 2.5h covers ET + penalties
+        kickoff_ts = next((float(b["kickoff_ts"]) for b in bets if b.get("kickoff_ts")), 0)
+        if kickoff_ts:
+            is_final = (_time.time() * 1000 - kickoff_ts) >= FINISH_AFTER_MS
+            log.info("Match status (time-based): kickoff %.0f min ago → is_final=%s",
+                     (_time.time() * 1000 - kickoff_ts) / 60000, is_final)
+        else:
+            is_final = True
+            log.info("Match status: no kickoff_ts — defaulting to FINISHED")
+
     is_live = fd_status in ("IN_PLAY", "PAUSED")
+
+    # A FINISHED game: Sport5's result1/result2 is the authoritative 90-min
+    # score (what bets are graded on). If we used the sheet, it may hold a
+    # mid-game snapshot (e.g. 0:0) — re-scrape to get the real final result.
+    if is_final and not scraped:
+        log.info("▶ Game finished — re-scraping Sport5 for the final 90-min result")
+        bets, leaderboard = scraper.run(game_id, email, password)
+        scraped = True
+        log.info("  Scraped %d player bets", len(bets))
+
+    # For LIVE games only, patch the score with football-data (Sport5 lags
+    # during play). For FINISHED games we keep Sport5's 90-min result rather
+    # than football-data's fullTime, which includes extra time + penalties.
     if live and live.get("score") and is_live:
         old_result = next((b.get("actual_result") for b in bets if b.get("actual_result")), "")
         if live["score"] != old_result:
@@ -219,24 +238,7 @@ def main():
     log.info("▶ Analyzing results...")
     analysis = analyzer.analyze(bets, leaderboard)
     summary = analysis["summary"]
-
-    if fd_status:
-        summary["is_final"] = (fd_status == "FINISHED")
-        log.info("Match status (football-data): %s → is_final=%s", fd_status, summary["is_final"])
-    else:
-        # Fallback: time-based heuristic on Sport5 kickoff timestamp (ms).
-        import time as _time
-        FINISH_AFTER_MS = int(2.5 * 60 * 60 * 1000)  # 2.5h covers ET + penalties
-        kickoff_ts = next((float(b["kickoff_ts"]) for b in bets if b.get("kickoff_ts")), 0)
-        now_ms     = _time.time() * 1000
-        if kickoff_ts:
-            elapsed_min = (now_ms - kickoff_ts) / 60000
-            summary["is_final"] = (now_ms - kickoff_ts) >= FINISH_AFTER_MS
-            log.info("Match status (time-based): kickoff %.0f min ago → is_final=%s",
-                     elapsed_min, summary["is_final"])
-        else:
-            summary["is_final"] = True
-            log.info("Match status: no kickoff_ts — defaulting to FINISHED")
+    summary["is_final"] = is_final
 
     log.info("  Game:    %s", summary.get("game", "?"))
     log.info("  Result:  %s", summary.get("actual_result", "Pending"))
@@ -281,7 +283,7 @@ def main():
             bonus_bets = sheets.read_bonus_bets(spreadsheet)
         except Exception as exc:
             log.warning("Could not load bonus bets: %s", exc)
-        if need_scrape:
+        if scraped:
             log.info("▶ Writing results to Google Sheets...")
             sheets.write_all(analysis, game_label, spreadsheet=spreadsheet)
         else:
